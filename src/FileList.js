@@ -4,7 +4,7 @@ import "./FileList.css";
 import { getUserFromToken } from "./auth";
 
 const ITEMS_PER_PAGE = 8;
-const API_BASE_URL = process.env.REACT_FETCH_API_ENDPOINT;
+const API_BASE_URL = "https://w4bnr926gc.execute-api.us-east-2.amazonaws.com/Prod";
 
 const FileList = () => {
   const [files, setFiles] = useState([]);
@@ -34,6 +34,7 @@ const FileList = () => {
           lockMap[item.filename] = {
             locked: item.status === "locked",
             lockedBy: item.locked_by || null,
+            timestamp: item.timestamp || null,
           };
         });
 
@@ -93,7 +94,7 @@ const FileList = () => {
 
         if (response.ok) {
           file.locked = true;
-          file.lockedBy = user.name;
+          file.lockedBy = user.email;
           setFiles(updatedFiles);
         } else {
           console.error("Lock failed");
