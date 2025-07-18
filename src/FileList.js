@@ -4,6 +4,7 @@ import "./FileList.css";
 import { getUserFromToken } from "./auth";
 
 const ITEMS_PER_PAGE = 8;
+const API_BASE_URL = process.env.REACT_FETCH_API_ENDPOINT;
 
 const FileList = () => {
   const [files, setFiles] = useState([]);
@@ -17,10 +18,10 @@ const FileList = () => {
 
   setLoading(true);
 
-  const fetchS3Files = fetch("https://w4bnr926gc.execute-api.us-east-2.amazonaws.com/Prod/s3-files")
+  const fetchS3Files = fetch(`${API_BASE_URL}/s3-files`)
     .then((res) => res.json());
 
-  const fetchLocks = fetch("https://w4bnr926gc.execute-api.us-east-2.amazonaws.com/Prod/list")
+  const fetchLocks = fetch(`${API_BASE_URL}/list`)
     .then((res) => res.json());
 
   Promise.all([fetchS3Files, fetchLocks])
@@ -64,7 +65,7 @@ const FileList = () => {
     if (file.locked) {
       try {
         const response = await fetch(
-          "https://w4bnr926gc.execute-api.us-east-2.amazonaws.com/Prod/unlock",
+          `${API_BASE_URL}/unlock`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -85,7 +86,7 @@ const FileList = () => {
     } else {
       try {
         const response = await fetch(
-          "https://w4bnr926gc.execute-api.us-east-2.amazonaws.com/Prod/lock",
+          `${API_BASE_URL}/lock`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -111,7 +112,7 @@ const FileList = () => {
 
   return (
     <div className="file-container">
-      <h1>Mock S3 File Manager</h1>
+      <h1>S3 File Manager</h1>
       <h2>Files in S3 Bucket</h2>
 
       {loading ? (
