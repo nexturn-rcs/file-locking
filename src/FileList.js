@@ -10,68 +10,68 @@ const FileList = () => {
   const [files, setFiles] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(true);
-    const [user, setUser] = useState(null);
+  const [user, setUser] = useState(null);
 
- useEffect(() => {
-  const userInfo = getUserFromToken();
-  if (userInfo) setUser(userInfo);
+  useEffect(() => {
+    const userInfo = getUserFromToken();
+    if (userInfo) setUser(userInfo);
 
-  setLoading(true);
+    setLoading(true);
 
-  const fetchS3Files = fetch(`${API_BASE_URL}/s3-files`)
-    .then((res) => res.json());
+    const fetchS3Files = fetch(
+      `${API_BASE_URL}/s3-files`
+    ).then((res) => res.json());
 
-  const fetchLocks = fetch(`${API_BASE_URL}/list`)
-    .then((res) => res.json());
+    const fetchLocks = fetch(
+      `${API_BASE_URL}/list`
+    ).then((res) => res.json());
 
-  Promise.all([fetchS3Files, fetchLocks])
-    .then(([s3Files, lockData]) => {
-      // Convert lock data to a map for quick lookup
-      const lockMap = {};
-      lockData.forEach(item => {
-        lockMap[item.filename] = {
-          locked: item.status === "locked",
-          lockedBy: item.locked_by || null
-        };
+    Promise.all([fetchS3Files, fetchLocks])
+      .then(([s3Files, lockData]) => {
+        // Convert lock data to a map for quick lookup
+        const lockMap = {};
+        lockData.forEach((item) => {
+          lockMap[item.filename] = {
+            locked: item.status === "locked",
+            lockedBy: item.locked_by || null,
+          };
+        });
+
+        const mergedFiles = s3Files.map((fileName) => ({
+          fileName,
+          locked: lockMap[fileName]?.locked || false,
+          lockedBy: lockMap[fileName]?.lockedBy || null,
+          timestamp: lockMap[fileName]?.timestamp || null,
+
+        }));
+
+        setFiles(mergedFiles);
+      })
+      .catch((err) => {
+        console.error("Failed to fetch files:", err);
+      })
+      .finally(() => {
+        setLoading(false);
       });
-
-      const mergedFiles = s3Files.map((fileName) => ({
-        fileName,
-        locked: lockMap[fileName]?.locked || false,
-        lockedBy: lockMap[fileName]?.lockedBy || null,
-      }));
-
-      setFiles(mergedFiles);
-    })
-    .catch((err) => {
-      console.error("Failed to fetch files:", err);
-    })
-    .finally(() => {
-      setLoading(false);
-    });
-}, []);
-
+  }, []);
 
   const handleLockToggle = async (indexOnPage) => {
     const index = (currentPage - 1) * ITEMS_PER_PAGE + indexOnPage;
     const updatedFiles = [...files];
     const file = updatedFiles[index];
 
-     if (!user) {
+    if (!user) {
       alert("User not authenticated");
       return;
     }
 
     if (file.locked) {
       try {
-        const response = await fetch(
-          `${API_BASE_URL}/unlock`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ filename: file.fileName }),
-          }
-        );
+        const response = await fetch(`${API_BASE_URL}/unlock`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ filename: file.fileName }),
+        });
 
         if (response.ok) {
           file.locked = false;
@@ -85,14 +85,11 @@ const FileList = () => {
       }
     } else {
       try {
-        const response = await fetch(
-          `${API_BASE_URL}/lock`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ filename: file.fileName, user: user.email }),
-          }
-        );
+        const response = await fetch(`${API_BASE_URL}/lock`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ filename: file.fileName, user: user.email }),
+        });
 
         if (response.ok) {
           file.locked = true;
@@ -130,6 +127,7 @@ const FileList = () => {
                 <th>File Name</th>
                 <th>Locked</th>
                 <th>Locked By</th>
+                <th>Locked Date</th>
                 <th>Action</th>
               </tr>
             </thead>
@@ -139,6 +137,16 @@ const FileList = () => {
                   <td>{file.fileName}</td>
                   <td>{file.locked ? "Yes" : "No"}</td>
                   <td>{file.locked ? `Locked by ${file.lockedBy}` : "-"}</td>
+                  <td>
+                    {file.locked && file.timestamp
+                      ? new Date(file.timestamp).toLocaleDateString("en-US", {
+                          year: "2-digit",
+                          month: "2-digit",
+                          day: "2-digit",
+                        })
+                      : "-"}
+                  </td>
+
                   <td>
                     <button
                       className={file.locked ? "unlock-btn" : "lock-btn"}
@@ -152,15 +160,17 @@ const FileList = () => {
             </tbody>
           </table>
 
-          <div className="pagination-container">
-            <Pagination
-              current={currentPage}
-              pageSize={ITEMS_PER_PAGE}
-              total={files.length}
-              onChange={(page) => setCurrentPage(page)}
-              showSizeChanger={false}
-            />
-          </div>
+          {files.length > ITEMS_PER_PAGE && (
+            <div className="pagination-container">
+              <Pagination
+                current={currentPage}
+                pageSize={ITEMS_PER_PAGE}
+                total={files.length}
+                onChange={(page) => setCurrentPage(page)}
+                showSizeChanger={false}
+              />
+            </div>
+          )}
         </>
       )}
     </div>

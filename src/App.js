@@ -20,7 +20,21 @@ function App() {
         <>
           <div style={{ textAlign: "right", padding: "10px 20px" }}>
             Logged in as <strong>{user.email}</strong>
-            <button onClick={logout} style={{ marginLeft: 10 }}>Logout</button>
+            <button
+              onClick={logout}
+              style={{
+                marginLeft: 10,
+                padding: "6px 12px",
+                backgroundColor: "#dc3545",
+                color: "#fff",
+                border: "none",
+                borderRadius: "4px",
+                cursor: "pointer",
+                fontWeight: "bold",
+              }}
+            >
+              Logout
+            </button>
           </div>
           <FileList />
         </>
