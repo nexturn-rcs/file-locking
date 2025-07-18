@@ -1,0 +1,106 @@
+.file-container {
+  text-align: center;
+  /* padding: 40px; */
+  /* background-color: #f9f9f9; */
+  /* min-height: 100vh; */
+}
+
+h1 {
+  color: #1a237e;
+  margin-bottom: 10px;
+}
+
+.file-table {
+  margin: 0 auto;
+  border-collapse: collapse;
+  width: 60%;
+  background-color: #fff;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.file-table th,
+.file-table td {
+  padding: 12px 16px;
+  border: 1px solid #ccc;
+}
+
+.file-table th {
+  background-color: #3f51b5;
+  color: white;
+}
+
+.lock-btn,
+.unlock-btn {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  color: white;
+  font-weight: bold;
+}
+
+.lock-btn {
+  background-color: #4caf50;
+}
+
+.unlock-btn {
+  background-color: #f44336;
+}
+
+.lock-btn:hover {
+  background-color: #388e3c;
+}
+
+.unlock-btn:hover {
+  background-color: #d32f2f;
+}
+
+.pagination-container {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 20px;
+  padding-right: 280px;
+}
+
+.custom-loader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 60vh;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #00bfff;
+  border-top: 4px solid transparent;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 10px;
+}
+
+.loader-text {
+  color: #1677ff;
+  font-weight: bold;
+  font-size: 14px;
+}
+
+.no-files-message {
+  margin-top: 40px;
+  color: #444;
+  font-size: 18px;
+  font-weight: bold;
+}
+
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+
