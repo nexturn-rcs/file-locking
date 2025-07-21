@@ -4,7 +4,9 @@ import "./FileList.css";
 import { getUserFromToken } from "./auth";
 
 const ITEMS_PER_PAGE = 8;
-const API_BASE_URL = "https://w4bnr926gc.execute-api.us-east-2.amazonaws.com/Prod";
+const API_BASE_URL = process.env.REACT_APP_FETCH_API_ENDPOINT;
+console.log("API_BASE_URL = ", API_BASE_URL);
+
 
 const FileList = () => {
   const [files, setFiles] = useState([]);
@@ -67,6 +69,7 @@ const FileList = () => {
     }
 
     if (file.locked) {
+      // Unlock file
       try {
         const response = await fetch(`${API_BASE_URL}/unlock`, {
           method: "POST",
@@ -77,6 +80,7 @@ const FileList = () => {
         if (response.ok) {
           file.locked = false;
           file.lockedBy = null;
+          file.timestamp = null;
           setFiles(updatedFiles);
         } else {
           console.error("Unlock failed");
@@ -95,6 +99,7 @@ const FileList = () => {
         if (response.ok) {
           file.locked = true;
           file.lockedBy = user.email;
+          file.timestamp = new Date().toISOString();
           setFiles(updatedFiles);
         } else {
           console.error("Lock failed");
