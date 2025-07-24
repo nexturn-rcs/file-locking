@@ -1,7 +1,7 @@
 .file-container {
   text-align: center;
-  /* padding: 40px; */
-  /* background-color: #f9f9f9; */
+  padding: 40px;
+  background-color: #ccdbe9;
   /* min-height: 100vh; */
 }
 
@@ -9,6 +9,27 @@ h1 {
   color: #1a237e;
   margin-bottom: 10px;
 }
+
+.upload-section {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+
+.upload-btn {
+  background-color: #1890ff;
+  color: white;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: bold;
+  transition: background 0.3s ease;
+}
+
+.upload-btn:hover {
+  background-color: #40a9ff;
+}
+
 
 .file-table {
   margin: 0 auto;
@@ -101,6 +122,63 @@ h1 {
   100% {
     transform: rotate(360deg);
   }
+}
+
+/* Add these styles to your existing FileList.css */
+
+.child-file {
+  background-color: #f9f9f9;
+  border-left: 3px solid #e6f7ff;
+}
+
+.child-file td {
+  font-size: 14px;
+  color: #666;
+}
+
+.folder-toggle-btn:hover {
+  background-color: #e6f7ff !important;
+  border-color: #91d5ff !important;
+  color: #1890ff !important;
+}
+
+.file-table tr.child-file:hover {
+  background-color: #f0f8ff;
+}
+
+.file-table tr:hover {
+  background-color: #f5f5f5;
+}
+
+/* Folder icon styling */
+.file-table td span[style*="cursor: pointer"] {
+  transition: color 0.2s ease;
+}
+
+.file-table td span[style*="cursor: pointer"]:hover {
+  color: #40a9ff !important;
+}
+
+/* Child file indentation line */
+.child-file td:first-child::before {
+  content: "";
+  position: absolute;
+  left: 20px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background-color: #d9d9d9;
+  margin-left: 10px;
+}
+
+.expand-arrow {
+  user-select: none;
+  transition: all 0.2s ease;
+}
+
+.expand-arrow:hover {
+  transform: scale(1.2);
+  background-color: #e6f7ff;
 }
 
 
