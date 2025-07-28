@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Pagination, Modal, Radio, Button, Tooltip } from "antd";
-import toast, { Toaster } from 'react-hot-toast';
+import toast, { Toaster } from "react-hot-toast";
 import "./FileList.css";
 import { getUserFromToken } from "./auth";
 
 const ITEMS_PER_PAGE = 8;
 const API_BASE_URL = process.env.REACT_APP_FETCH_API_ENDPOINT;
+console.log("API_BASE_URL", API_BASE_URL);
 
 const FileList = () => {
   const [files, setFiles] = useState([]);
@@ -30,13 +31,13 @@ const FileList = () => {
 
     fileList.forEach((file) => {
       const { fileName, locked, lockedBy, timestamp } = file;
-      
+
       // Check if this is a file within a folder (has forward slash)
-      if (fileName.includes('/')) {
-        const parts = fileName.split('/');
+      if (fileName.includes("/")) {
+        const parts = fileName.split("/");
         const folderName = parts[0];
-        const subPath = parts.slice(1).join('/');
-        
+        const subPath = parts.slice(1).join("/");
+
         if (!folderMap[folderName]) {
           folderMap[folderName] = {
             fileName: folderName,
@@ -44,17 +45,17 @@ const FileList = () => {
             locked: false,
             lockedBy: null,
             timestamp: null,
-            children: []
+            children: [],
           };
         }
-        
+
         folderMap[folderName].children.push({
           fileName: subPath,
           fullPath: fileName,
           locked,
           lockedBy,
           timestamp,
-          isFolder: false
+          isFolder: false,
         });
       } else {
         // Regular file (not in a folder)
@@ -63,13 +64,13 @@ const FileList = () => {
           locked,
           lockedBy,
           timestamp,
-          isFolder: false
+          isFolder: false,
         });
       }
     });
 
     // Add folders to organized list
-    Object.values(folderMap).forEach(folder => {
+    Object.values(folderMap).forEach((folder) => {
       organized.push(folder);
     });
 
@@ -79,21 +80,21 @@ const FileList = () => {
   // Helper function to flatten organized files for display with expansion
   const flattenForDisplay = (organizedFiles) => {
     const flattened = [];
-    
-    organizedFiles.forEach(item => {
+
+    organizedFiles.forEach((item) => {
       flattened.push(item);
-      
+
       if (item.isFolder && expandedFolders.has(item.fileName)) {
-        item.children.forEach(child => {
+        item.children.forEach((child) => {
           flattened.push({
             ...child,
             isChild: true,
-            parentFolder: item.fileName
+            parentFolder: item.fileName,
           });
         });
       }
     });
-    
+
     return flattened;
   };
 
@@ -167,6 +168,8 @@ const FileList = () => {
     try {
       const fileName = file.fullPath || file.fileName;
       const endpoint = file.locked ? "unlock" : "lock";
+      const isCurrentlyLocked = file.locked; // Store the current state
+
       const payload = file.locked
         ? { filename: fileName }
         : { filename: fileName, user: user.email };
@@ -180,37 +183,51 @@ const FileList = () => {
       if (response.ok) {
         // Update the file in the organized structure
         const updatedFiles = [...files];
-        
+
         if (file.isChild) {
           // Find the parent folder and update the child
-          const parentFolder = updatedFiles.find(f => f.fileName === file.parentFolder);
+          const parentFolder = updatedFiles.find(
+            (f) => f.fileName === file.parentFolder
+          );
           if (parentFolder) {
-            const childFile = parentFolder.children.find(c => c.fullPath === fileName);
+            const childFile = parentFolder.children.find(
+              (c) => c.fullPath === fileName
+            );
             if (childFile) {
               childFile.locked = !childFile.locked;
               childFile.lockedBy = childFile.locked ? user.email : null;
-              childFile.timestamp = childFile.locked ? new Date().toISOString() : null;
+              childFile.timestamp = childFile.locked
+                ? new Date().toISOString()
+                : null;
             }
           }
         } else {
           // Regular file
-          const fileToUpdate = updatedFiles.find(f => f.fileName === fileName);
+          const fileToUpdate = updatedFiles.find(
+            (f) => f.fileName === fileName
+          );
           if (fileToUpdate) {
             fileToUpdate.locked = !fileToUpdate.locked;
             fileToUpdate.lockedBy = fileToUpdate.locked ? user.email : null;
-            fileToUpdate.timestamp = fileToUpdate.locked ? new Date().toISOString() : null;
+            fileToUpdate.timestamp = fileToUpdate.locked
+              ? new Date().toISOString()
+              : null;
           }
         }
-        
+
         setFiles(updatedFiles);
-        toast.success(`File ${file.locked ? 'unlocked' : 'locked'} successfully`);
+
+        // Fix: Use the stored current state to show correct message
+        toast.success(
+          `File ${isCurrentlyLocked ? "unlocked" : "locked"} successfully`
+        );
       } else {
         console.error(`${endpoint} failed`);
         toast.error(`Failed to ${endpoint} file`);
       }
     } catch (error) {
       console.error("Lock toggle error:", error);
-      toast.error(`Error ${file.locked ? 'unlocking' : 'locking'} file`);
+      toast.error(`Error ${file.locked ? "unlocking" : "locking"} file`);
     }
   };
 
@@ -229,8 +246,10 @@ const FileList = () => {
     const files = Array.from(e.target.files);
     setSelectedFiles(files);
 
-    if (uploadType === "file" && fileInputRef.current) fileInputRef.current.value = "";
-    if (uploadType === "folder" && folderInputRef.current) folderInputRef.current.value = "";
+    if (uploadType === "file" && fileInputRef.current)
+      fileInputRef.current.value = "";
+    if (uploadType === "folder" && folderInputRef.current)
+      folderInputRef.current.value = "";
   };
 
   const resetUploadState = () => {
@@ -286,33 +305,38 @@ const FileList = () => {
 
       if (response.ok && result.uploaded && result.uploaded.length > 0) {
         console.log("Upload successful, showing success message...");
-        
-        toast.success(`🎉 Successfully uploaded ${result.uploaded.length} file(s)!`, {
-          duration: 4000,
-          position: 'top-center',
-          style: {
-            background: '#4CAF50',
-            color: 'white',
-            fontWeight: 'bold',
-            padding: '16px',
-            borderRadius: '8px',
-          },
-          iconTheme: {
-            primary: 'white',
-            secondary: '#4CAF50',
-          },
-        });
-        
+
+        toast.success(
+          `🎉 Successfully uploaded ${result.uploaded.length} file(s)!`,
+          {
+            duration: 4000,
+            position: "top-center",
+            style: {
+              background: "#4CAF50",
+              color: "white",
+              fontWeight: "bold",
+              padding: "16px",
+              borderRadius: "8px",
+            },
+            iconTheme: {
+              primary: "white",
+              secondary: "#4CAF50",
+            },
+          }
+        );
+
         setUploadModalVisible(false);
         resetUploadState();
-        
+
         console.log("Refreshing file list...");
         try {
           await fetchFiles();
           console.log("File list refreshed successfully");
         } catch (fetchError) {
           console.error("Error refreshing file list:", fetchError);
-          toast.error("Files uploaded but failed to refresh the list. Please refresh the page.");
+          toast.error(
+            "Files uploaded but failed to refresh the list. Please refresh the page."
+          );
         }
       } else {
         console.warn("Upload failed:", result);
@@ -330,46 +354,99 @@ const FileList = () => {
 
   const flattenedFiles = flattenForDisplay(files);
   const startIndex = (currentPage - 1) * pageSize;
-  const paginatedFiles = flattenedFiles.slice(startIndex, startIndex + pageSize);
+  const paginatedFiles = flattenedFiles.slice(
+    startIndex,
+    startIndex + pageSize
+  );
+
+  const formatDateTime = (timestamp) => {
+    if (!timestamp) return "-";
+
+    const date = new Date(timestamp);
+    const dateStr = date.toLocaleDateString("en-US", {
+      year: "2-digit",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    const timeStr = date.toLocaleTimeString("en-US", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    });
+
+    return `${dateStr}, ${timeStr}`;
+  };
 
   return (
     <div className="file-container">
-      <Toaster 
+      <Toaster
         position="top-center"
         reverseOrder={false}
         gutter={8}
         containerClassName=""
         containerStyle={{}}
         toastOptions={{
-          className: '',
+          className: "",
           duration: 4000,
           style: {
-            background: '#363636',
-            color: '#fff',
+            background: "#363636",
+            color: "#fff",
           },
           success: {
             duration: 4000,
             theme: {
-              primary: 'green',
-              secondary: 'black',
+              primary: "green",
+              secondary: "black",
             },
           },
           error: {
             duration: 4000,
             theme: {
-              primary: 'red',
-              secondary: 'black',
+              primary: "red",
+              secondary: "black",
             },
           },
         }}
       />
 
-      <h1>S3 File Manager</h1>
-      <h2>Files in S3 Bucket</h2>
+      <div
+        style={{
+          position: "relative",
+          textAlign: "center",
+          marginBottom: "20px",
+          padding: "0 20px",
+        }}
+      >
+        <div>
+          <h1>S3 File Manager</h1>
+          <h2>Files in S3 Bucket</h2>
+        </div>
+
+        <div
+          style={{
+            position: "absolute",
+            top: "-10px",
+            right: "-30px",
+            display: "flex",
+            alignItems: "center",
+            height: "100%",
+          }}
+        >
+          <img
+            src="/DCLI_Logo.jpg"
+            alt="TRAC Intermodal Logo"
+            style={{
+              maxWidth: "150px",
+              maxHeight: "80px",
+              objectFit: "contain",
+            }}
+          />
+        </div>
+      </div>
 
       <div style={{ textAlign: "center", marginBottom: 16 }}>
-        <Button 
-          type="primary" 
+        <Button
+          type="primary"
           onClick={() => setUploadModalVisible(true)}
           loading={uploading}
           disabled={uploading}
@@ -390,8 +467,8 @@ const FileList = () => {
         closable={!uploading}
         maskClosable={!uploading}
         footer={[
-          <Button 
-            key="cancel" 
+          <Button
+            key="cancel"
             onClick={() => {
               setUploadModalVisible(false);
               resetUploadState();
@@ -411,8 +488,8 @@ const FileList = () => {
           </Button>,
         ]}
       >
-        <Radio.Group 
-          onChange={handleUploadSelection} 
+        <Radio.Group
+          onChange={handleUploadSelection}
           value={uploadType}
           disabled={uploading}
         >
@@ -440,9 +517,25 @@ const FileList = () => {
         />
 
         {selectedFiles.length > 0 && (
-          <div style={{ marginTop: 16, padding: 8, backgroundColor: "#f0f0f0", borderRadius: 4 }}>
-            <p><strong>{selectedFiles.length} file(s) selected:</strong></p>
-            <ul style={{ maxHeight: 150, overflowY: "auto", margin: 0, paddingLeft: 20 }}>
+          <div
+            style={{
+              marginTop: 16,
+              padding: 8,
+              backgroundColor: "#f0f0f0",
+              borderRadius: 4,
+            }}
+          >
+            <p>
+              <strong>{selectedFiles.length} file(s) selected:</strong>
+            </p>
+            <ul
+              style={{
+                maxHeight: 150,
+                overflowY: "auto",
+                margin: 0,
+                paddingLeft: 20,
+              }}
+            >
               {selectedFiles.slice(0, 10).map((file, index) => (
                 <li key={index}>{file.webkitRelativePath || file.name}</li>
               ))}
@@ -475,62 +568,77 @@ const FileList = () => {
             </thead>
             <tbody>
               {paginatedFiles.map((file, index) => (
-                <tr key={file.fullPath || file.fileName} className={file.isChild ? 'child-file' : ''}>
-                  <td style={{ paddingLeft: file.isChild ? '30px' : '10px' }}>
+                <tr
+                  key={file.fullPath || file.fileName}
+                  className={file.isChild ? "child-file" : ""}
+                >
+                  <td style={{ paddingLeft: file.isChild ? "30px" : "10px" }}>
                     {file.isFolder ? (
-                      <span style={{ display: 'flex', alignItems: 'center' }}>
-                        <span style={{ marginRight: '8px' }}>📁</span>
-                        <span>
-                          {file.fileName}
-                        </span>
-                        <span style={{ marginLeft: '8px', fontSize: '12px', color: '#666' }}>
+                      <span style={{ display: "flex", alignItems: "center" }}>
+                        <span style={{ marginRight: "8px" }}>📁</span>
+                        <span>{file.fileName}</span>
+                        <span
+                          style={{
+                            marginLeft: "8px",
+                            fontSize: "12px",
+                            color: "#666",
+                          }}
+                        >
                           ({file.children.length} files)
                         </span>
-                        <span 
+                        <span
                           onClick={() => handleFolderToggle(file.fileName)}
-                          style={{ 
-                            marginLeft: '10px',
-                            cursor: 'pointer', 
-                            fontSize: '16px',
-                            color: '#1890ff',
-                            fontWeight: 'bold',
-                            padding: '2px 6px',
-                            borderRadius: '3px',
-                            transition: 'background-color 0.2s ease'
+                          style={{
+                            marginLeft: "10px",
+                            cursor: "pointer",
+                            fontSize: "16px",
+                            color: "#1890ff",
+                            fontWeight: "bold",
+                            padding: "2px 6px",
+                            borderRadius: "3px",
+                            transition: "background-color 0.2s ease",
                           }}
-                          onMouseOver={(e) => e.target.style.backgroundColor = '#f0f8ff'}
-                          onMouseOut={(e) => e.target.style.backgroundColor = 'transparent'}
+                          onMouseOver={(e) =>
+                            (e.target.style.backgroundColor = "#f0f8ff")
+                          }
+                          onMouseOut={(e) =>
+                            (e.target.style.backgroundColor = "transparent")
+                          }
                         >
-                          {expandedFolders.has(file.fileName) ? '▲' : '▼'}
+                          {expandedFolders.has(file.fileName) ? "▲" : "▼"}
                         </span>
                       </span>
                     ) : (
-                      <span style={{ display: 'flex', alignItems: 'center' }}>
-                        {!file.isChild && <span style={{ marginRight: '8px' }}>📄</span>}
+                      <span style={{ display: "flex", alignItems: "center" }}>
+                        {!file.isChild && (
+                          <span style={{ marginRight: "8px" }}>📄</span>
+                        )}
                         {file.fileName}
                       </span>
                     )}
                   </td>
-                  <td>{file.isFolder ? '-' : (file.locked ? "Yes" : "No")}</td>
+                  <td>{file.isFolder ? "-" : file.locked ? "Yes" : "No"}</td>
                   <td>
-                    {file.isFolder ? '-' : (file.locked ? (
+                    {file.isFolder ? (
+                      "-"
+                    ) : file.locked ? (
                       <Tooltip title={file.lockedBy}>{file.lockedBy}</Tooltip>
                     ) : (
                       "-"
-                    ))}
+                    )}
                   </td>
                   <td>
-                    {file.isFolder ? '-' : (file.locked && file.timestamp
-                      ? new Date(file.timestamp).toLocaleDateString("en-US", {
-                          year: "2-digit",
-                          month: "2-digit",
-                          day: "2-digit",
-                        })
-                      : "-")}
+                    {file.isFolder
+                      ? "-"
+                      : file.locked && file.timestamp
+                      ? formatDateTime(file.timestamp)
+                      : "-"}
                   </td>
                   <td>
                     {file.isFolder ? (
-                      <span style={{ color: '#999', fontStyle: 'italic' }}>-</span>
+                      <span style={{ color: "#999", fontStyle: "italic" }}>
+                        -
+                      </span>
                     ) : (
                       <button
                         className={file.locked ? "unlock-btn" : "lock-btn"}
