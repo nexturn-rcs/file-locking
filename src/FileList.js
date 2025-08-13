@@ -55,6 +55,50 @@ const FileList = () => {
     }
   };
 
+  // Helper function to decode base64 content
+  const decodeBase64Content = (base64String) => {
+    try {
+      return atob(base64String);
+    } catch (error) {
+      console.error("Error decoding base64:", error);
+      return base64String;
+    }
+  };
+
+  // Helper function to create proper blob from response
+  const createBlobFromResponse = async (response) => {
+    try {
+      const contentType = response.headers.get('content-type') || 'application/octet-stream';
+      
+      // If the response is JSON, it might contain base64 encoded content
+      if (contentType.includes('application/json')) {
+        const jsonData = await response.json();
+        
+        if (jsonData.content_base64) {
+          // Decode base64 content
+          const decodedContent = decodeBase64Content(jsonData.content_base64);
+          // Create blob with proper content type
+          const actualContentType = jsonData.content_type || 'text/plain';
+          return new Blob([decodedContent], { type: actualContentType });
+        } else if (jsonData.content) {
+          // Direct content
+          const actualContentType = jsonData.content_type || 'text/plain';
+          return new Blob([jsonData.content], { type: actualContentType });
+        }
+      }
+      
+      // For other content types, treat as binary blob
+      const blob = await response.blob();
+      return blob;
+      
+    } catch (error) {
+      console.error("Error creating blob from response:", error);
+      // Fallback: treat as text blob
+      const text = await response.text();
+      return new Blob([text], { type: 'text/plain' });
+    }
+  };
+
   // Helper function to organize files into folder structure (with nested folder support)
   const organizeFiles = (fileList) => {
     const organized = [];
@@ -216,7 +260,7 @@ const FileList = () => {
     setVersionDownloadModalVisible(true);
   };
 
-  // ✅ New function to confirm and download specific version
+  // ✅ FIXED function to confirm and download specific version
   const confirmVersionDownload = async () => {
     if (!selectedVersion) return;
 
@@ -250,8 +294,8 @@ const FileList = () => {
         );
       }
 
-      // Get the blob data
-      const blob = await response.blob();
+      // FIXED: Use the helper function to properly create blob from response
+      const blob = await createBlobFromResponse(response);
 
       // Create download link
       const url = window.URL.createObjectURL(blob);
@@ -292,7 +336,7 @@ const FileList = () => {
     }
   };
 
-  // ✅ Function to handle file download (latest version)
+  // ✅ FIXED function to handle file download (latest version)
   const handleDownload = async (file) => {
     const fileName = file.fullPath || file.fileName;
 
@@ -319,8 +363,8 @@ const FileList = () => {
         );
       }
 
-      // Get the blob data
-      const blob = await response.blob();
+      // FIXED: Use the helper function to properly create blob from response
+      const blob = await createBlobFromResponse(response);
 
       // Create download link
       const url = window.URL.createObjectURL(blob);
@@ -1231,7 +1275,7 @@ const FileList = () => {
                                 color: "#1890ff",
                                 cursor: "pointer",
                                 textDecoration: "underline",
-                                fontSize: "12px",
+                                fontSize: "14px",
                                 fontWeight: "500",
                                 display: "flex",
                                 alignItems: "center",
@@ -2035,6 +2079,113 @@ const FileList = () => {
           font-weight: 600;
         }
 
+        .custom-loader {
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          align-items: center;
+          height: 300px;
+          background: rgba(255, 255, 255, 0.95);
+          backdrop-filter: blur(20px);
+          border-radius: 20px;
+          box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+        }
+
+        .spinner {
+          width: 40px;
+          height: 40px;
+          border: 4px solid #E5E7EB;
+          border-top: 4px solid #667eea;
+          border-radius: 50%;
+          animation: spin 1s linear infinite;
+          margin-bottom: 16px;
+        }
+
+        .loader-text {
+          font-size: 1.125rem;
+          font-weight: 600;
+          color: #667eea;
+        }
+
+        .no-files-message {
+          text-align: center;
+          padding: 60px 20px;
+          background: rgba(255, 255, 255, 0.95);
+          backdrop-filter: blur(20px);
+          border-radius: 20px;
+          box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+          font-size: 1.25rem;
+          font-weight: 600;
+          color: #6B7280;
+        }
+
+        .file-table {
+          width: 100%;
+          background: rgba(255, 255, 255, 0.95);
+          backdrop-filter: blur(20px);
+          border-radius: 20px;
+          box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+          border-collapse: collapse;
+          overflow: hidden;
+          margin-bottom: 20px;
+        }
+
+        .file-table th {
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          color: white;
+          padding: 16px 12px;
+          text-align: left;
+          font-weight: 600;
+          font-size: 0.875rem;
+          letter-spacing: 0.025em;
+        }
+
+        .file-table td {
+          padding: 12px;
+          border-bottom: 1px solid #E5E7EB;
+          font-size: 15px;
+          // color: #374151;
+          vertical-align: middle;
+        }
+
+        .file-table tr:hover {
+          background: rgba(102, 126, 234, 0.05);
+        }
+
+        .child-file {
+          background: rgba(102, 126, 234, 0.02) !important;
+        }
+
+        .child-file:hover {
+          background: rgba(102, 126, 234, 0.08) !important;
+        }
+
+        .lock-btn, .unlock-btn {
+          background: linear-gradient(135deg, #EF4444 0%, #DC2626 100%);
+          color: white;
+          border: none;
+          border-radius: 6px;
+          padding: 6px 12px;
+          font-size: 15px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+
+        .unlock-btn {
+          background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+        }
+
+        .lock-btn:hover {
+          background: linear-gradient(135deg, #DC2626 0%, #B91C1C 100%);
+          transform: translateY(-1px);
+        }
+
+        .unlock-btn:hover {
+          background: linear-gradient(135deg, #059669 0%, #047857 100%);
+          transform: translateY(-1px);
+        }
+
         .pagination-container {
           display: flex;
           justify-content: center;
@@ -2102,6 +2253,15 @@ const FileList = () => {
             max-width: 240px;
             max-height: 100px;
           }
+
+          .file-table {
+            font-size: 0.75rem;
+          }
+
+          .file-table th,
+          .file-table td {
+            padding: 8px 6px;
+          }
         }
 
         @media (max-width: 480px) {
@@ -2116,6 +2276,15 @@ const FileList = () => {
           .company-logo {
             max-width: 200px;
             max-height: 80px;
+          }
+
+          .file-table {
+            font-size: 0.6875rem;
+          }
+
+          .file-table th,
+          .file-table td {
+            padding: 6px 4px;
           }
         }
       `}</style>
