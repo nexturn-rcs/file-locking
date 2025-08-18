@@ -4,7 +4,7 @@ import toast, { Toaster } from "react-hot-toast";
 import "./FileList.css";
 import { getUserFromToken } from "./auth";
 
-const ITEMS_PER_PAGE = 8;
+
 const API_BASE_URL = process.env.REACT_APP_FETCH_API_ENDPOINT;
 console.log("API_BASE_URL", API_BASE_URL);
 
@@ -67,37 +67,38 @@ const FileList = () => {
 
   // Helper function to create proper blob from response
   const createBlobFromResponse = async (response) => {
-    try {
-      const contentType = response.headers.get('content-type') || 'application/octet-stream';
-      
-      // If the response is JSON, it might contain base64 encoded content
-      if (contentType.includes('application/json')) {
-        const jsonData = await response.json();
-        
-        if (jsonData.content_base64) {
-          // Decode base64 content
-          const decodedContent = decodeBase64Content(jsonData.content_base64);
-          // Create blob with proper content type
-          const actualContentType = jsonData.content_type || 'text/plain';
-          return new Blob([decodedContent], { type: actualContentType });
-        } else if (jsonData.content) {
-          // Direct content
-          const actualContentType = jsonData.content_type || 'text/plain';
-          return new Blob([jsonData.content], { type: actualContentType });
-        }
+  try {
+    // The new backend always returns JSON with structured data
+    const responseData = await response.json();
+    
+    if (responseData.content_base64) {
+      // Decode base64 content properly
+      const binaryString = atob(responseData.content_base64);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
       }
       
-      // For other content types, treat as binary blob
-      const blob = await response.blob();
-      return blob;
-      
-    } catch (error) {
-      console.error("Error creating blob from response:", error);
-      // Fallback: treat as text blob
-      const text = await response.text();
-      return new Blob([text], { type: 'text/plain' });
+      // Use the content_type from backend response
+      return new Blob([bytes], { 
+        type: responseData.content_type || 'application/octet-stream' 
+      });
+    } else if (responseData.content) {
+      // Direct content (fallback)
+      return new Blob([responseData.content], { 
+        type: responseData.content_type || 'text/plain' 
+      });
+    } else {
+      throw new Error('No content found in response');
     }
-  };
+    
+  } catch (error) {
+    console.error("Error creating blob from response:", error);
+    // Fallback: treat as text
+    const text = await response.text();
+    return new Blob([text], { type: 'text/plain' });
+  }
+};
 
   // Helper function to organize files into folder structure (with nested folder support)
   const organizeFiles = (fileList) => {
@@ -186,7 +187,7 @@ const FileList = () => {
           folderObj.children.push(nestedFolder);
         });
       }
-      delete folderObj.childrenMap; // Clean up the temporary map
+      delete folderObj.childrenMap;
     };
 
     // Process all folders to convert nested maps to arrays
@@ -261,80 +262,116 @@ const FileList = () => {
   };
 
   // ✅ FIXED function to confirm and download specific version
-  const confirmVersionDownload = async () => {
-    if (!selectedVersion) return;
+const confirmVersionDownload = async () => {
+  if (!selectedVersion) return;
 
-    const { fileName, version, displayName } = selectedVersion;
-    const downloadKey = `${fileName}-${version.VersionId}`;
+  const { fileName, version, displayName } = selectedVersion;
+  const downloadKey = `${fileName}-${version.VersionId}`;
 
-    // Add to downloading state
-    setDownloadingVersion(true);
-    setDownloadingFiles((prev) => new Set(prev).add(downloadKey));
+  // Add to downloading state
+  setDownloadingVersion(true);
+  setDownloadingFiles((prev) => new Set(prev).add(downloadKey));
 
-    try {
-      // Create request payload for version download
-      const requestBody = {
-        filename: fileName
-      };
+  try {
+    // Create request payload for version download
+    const requestBody = {
+      filename: fileName,
+      // Send versionId - backend handles both version_id and versionId
+      versionId: version.VersionId
+    };
 
-      // Add version ID if it's not null (null means original version)
-      if (version.VersionId && version.VersionId !== "null") {
-        requestBody.versionId = version.VersionId;
-      }
+    console.log('Downloading version with payload:', requestBody);
 
-      const response = await fetch(`${API_BASE_URL}/download`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody),
-      });
+    const response = await fetch(`${API_BASE_URL}/download`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(requestBody),
+    });
 
-      if (!response.ok) {
-        throw new Error(
-          `Download failed: ${response.status} ${response.statusText}`
-        );
-      }
-
-      // FIXED: Use the helper function to properly create blob from response
-      const blob = await createBlobFromResponse(response);
-
-      // Create download link
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-
-      // Create filename with version info
-      const fileExtension = displayName.includes('.') ? displayName.split('.').pop() : '';
-      const fileNameWithoutExt = displayName.includes('.') ? displayName.substring(0, displayName.lastIndexOf('.')) : displayName;
-      const versionLabel = version.IsLatest ? 'latest' : (version.VersionId === "null" ? 'original' : version.VersionId.substring(0, 8));
-      const downloadFileName = fileExtension 
-        ? `${fileNameWithoutExt}_v${versionLabel}.${fileExtension}`
-        : `${fileNameWithoutExt}_v${versionLabel}`;
-
-      link.download = downloadFileName;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-
-      toast.success(`Version downloaded successfully as "${downloadFileName}"!`);
-      
-      // Close modal
-      setVersionDownloadModalVisible(false);
-      setSelectedVersion(null);
-
-    } catch (error) {
-      console.error("Version download error:", error);
-      toast.error(`Failed to download version: ${error.message}`);
-    } finally {
-      // Remove from downloading state
-      setDownloadingVersion(false);
-      setDownloadingFiles((prev) => {
-        const newSet = new Set(prev);
-        newSet.delete(downloadKey);
-        return newSet;
-      });
+    if (!response.ok) {
+      throw new Error(
+        `Download failed: ${response.status} ${response.statusText}`
+      );
     }
-  };
+
+    // Parse the JSON response first to get the enhanced information
+    const responseData = await response.json();
+    console.log('Backend response:', responseData);
+
+    // Verify we got the correct version
+    if (responseData.version_id) {
+      console.log(`Downloaded version ID: ${responseData.version_id}`);
+      console.log(`Requested version ID: ${version.VersionId}`);
+      
+      if (responseData.version_id !== version.VersionId) {
+        console.warn('Version ID mismatch! Requested:', version.VersionId, 'Got:', responseData.version_id);
+      }
+    }
+
+    // Create blob from base64 content with proper content type
+    const binaryString = atob(responseData.content_base64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    
+    const blob = new Blob([bytes], { 
+      type: responseData.content_type || 'application/octet-stream' 
+    });
+
+    // Create download link
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+
+    // Create filename with version info
+    const fileExtension = displayName.includes('.') ? displayName.split('.').pop() : '';
+    const fileNameWithoutExt = displayName.includes('.') ? displayName.substring(0, displayName.lastIndexOf('.')) : displayName;
+    
+    // IMPROVED: Better version labeling using actual version info
+    let versionLabel;
+    if (version.IsLatest) {
+      versionLabel = 'latest';
+    } else if (version.VersionId === "null") {
+      versionLabel = 'original';
+    } else {
+      versionLabel = version.VersionId.substring(0, 8);
+    }
+    
+    const downloadFileName = fileExtension 
+      ? `${fileNameWithoutExt}_v${versionLabel}.${fileExtension}`
+      : `${fileNameWithoutExt}_v${versionLabel}`;
+
+    link.download = downloadFileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+
+    // Enhanced success message with version info
+    const successMessage = responseData.version_id 
+      ? `Version ${responseData.version_id.substring(0, 8)}... downloaded as "${downloadFileName}"!`
+      : `File downloaded as "${downloadFileName}"!`;
+    
+    toast.success(successMessage);
+    
+    // Close modal
+    setVersionDownloadModalVisible(false);
+    setSelectedVersion(null);
+
+  } catch (error) {
+    console.error("Version download error:", error);
+    toast.error(`Failed to download version: ${error.message}`);
+  } finally {
+    // Remove from downloading state
+    setDownloadingVersion(false);
+    setDownloadingFiles((prev) => {
+      const newSet = new Set(prev);
+      newSet.delete(downloadKey);
+      return newSet;
+    });
+  }
+};
 
   // ✅ FIXED function to handle file download (latest version)
   const handleDownload = async (file) => {
@@ -397,50 +434,73 @@ const FileList = () => {
   };
 
   // ✅ Fetch files from S3 and DynamoDB
-  const fetchFiles = async () => {
-    setLoading(true);
-    try {
-      const [s3Res, lockRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/s3-files`).then((r) => r.json()),
-        fetch(`${API_BASE_URL}/list`).then((r) => r.json()),
-      ]);
+const fetchFiles = async () => {
+  setLoading(true);
+  try {
+    const [s3ResRaw, lockRes] = await Promise.all([
+      fetch(`${API_BASE_URL}/s3-files`).then((r) => r.json()),
+      fetch(`${API_BASE_URL}/list`).then((r) => r.json()),
+    ]);
 
-      const lockMap = {};
-      lockRes.forEach((item) => {
-        lockMap[item.filename] = {
-          locked: item.status === "locked",
-          lockedBy: item.locked_by || null,
-          timestamp: item.timestamp || null,
-        };
-      });
+    // Ensure s3Res is always an array (use 'items' from API response)
+    const s3Res = Array.isArray(s3ResRaw) ? s3ResRaw : s3ResRaw.items || [];
 
-      const merged = s3Res.map((fileName) => ({
+    const lockMap = {};
+    lockRes.forEach((item) => {
+      lockMap[item.filename] = {
+        locked: item.status === "locked",
+        lockedBy: item.locked_by || null,
+        timestamp: item.timestamp || null,
+      };
+    });
+
+    // Map file objects to expected format
+    const merged = s3Res.map((fileObj) => {
+      const fileName = fileObj.key;
+      return {
         fileName,
         locked: lockMap[fileName]?.locked || false,
         lockedBy: lockMap[fileName]?.lockedBy || null,
         timestamp: lockMap[fileName]?.timestamp || null,
-      }));
+        size: fileObj.size,
+        lastModified: fileObj.last_modified,
+        eTag: fileObj.e_tag,
+      };
+    });
 
-      const organized = organizeFiles(merged);
+    const organized = organizeFiles(merged);
 
-      const withVersions = await Promise.all(
-        organized.map(async (f) => {
-          if (!f.isFolder) {
-            f.versions = await fetchFileVersions(f.fileName);
+    // ✅ FIXED: Recursively fetch versions for all files including nested ones
+    const fetchVersionsRecursively = async (items) => {
+      return Promise.all(
+        items.map(async (item) => {
+          if (item.isFolder) {
+            // Recursively process children in folders
+            if (item.children && item.children.length > 0) {
+              item.children = await fetchVersionsRecursively(item.children);
+            }
+            return item;
+          } else {
+            // For files, fetch versions using the full path
+            const filePathForVersions = item.fullPath || item.fileName;
+            item.versions = await fetchFileVersions(filePathForVersions);
+            return item;
           }
-          return f;
         })
       );
+    };
 
-      setFiles(withVersions);
-    } catch (err) {
-      console.error("Error fetching files:", err);
-      toast.error("Failed to fetch files");
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  };
+    const withVersions = await fetchVersionsRecursively(organized);
+
+    setFiles(withVersions);
+  } catch (err) {
+    console.error("Error fetching files:", err);
+    toast.error("Failed to fetch files");
+    throw err;
+  } finally {
+    setLoading(false);
+  }
+};
 
   useEffect(() => {
     const userInfo = getUserFromToken();
@@ -1578,716 +1638,8 @@ const FileList = () => {
               className="custom-pagination"
             />
           </div>
-
-          {/* Add CSS for spinner animation and enhanced version details */}
-          <style jsx>{`
-            @keyframes spin {
-              0% {
-                transform: rotate(0deg);
-              }
-              100% {
-                transform: rotate(360deg);
-              }
-            }
-            
-            .version-details-row {
-              background-color: #f8f9fa !important;
-              border-top: 2px solid #e9ecef;
-            }
-            
-            .version-details-container {
-              padding: 20px;
-              background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-              border-radius: 8px;
-              margin: 10px;
-              box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
-            }
-            
-            .version-header {
-              display: flex;
-              justify-content: space-between;
-              align-items: center;
-              margin-bottom: 15px;
-              padding-bottom: 10px;
-              border-bottom: 2px solid #dee2e6;
-            }
-            
-            .version-header h4 {
-              margin: 0;
-              color: #495057;
-              font-size: 16px;
-              font-weight: 600;
-            }
-            
-            .versions-list {
-              max-height: 500px;
-              overflow-y: auto;
-              display: flex;
-              flex-direction: column;
-              gap: 12px;
-            }
-            
-            .version-item {
-              background: white;
-              border: 1px solid #dee2e6;
-              border-radius: 8px;
-              padding: 15px;
-              box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-              transition: all 0.2s ease;
-            }
-            
-            .version-item:hover {
-              box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-              transform: translateY(-1px);
-            }
-            
-            .latest-version {
-              border-color: #28a745;
-              background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
-            }
-            
-            .version-info {
-              width: 100%;
-            }
-            
-            .version-details-grid {
-              display: grid;
-              grid-template-columns: 1fr 1fr 1fr auto;
-              gap: 12px;
-              align-items: center;
-            }
-            
-            .version-id, .version-date, .version-size {
-              font-family: 'Monaco', 'Menlo', monospace;
-              font-size: 12px;
-              word-break: break-all;
-              color: #495057;
-            }
-            
-            .version-id {
-              font-size: 13px;
-              font-weight: 600;
-            }
-            
-            .version-actions {
-              display: flex;
-              justify-content: flex-end;
-              align-items: center;
-            }
-            
-            .latest-badge {
-              background: #28a745;
-              color: white;
-              padding: 2px 8px;
-              border-radius: 12px;
-              font-size: 9px;
-              font-weight: bold;
-              text-transform: uppercase;
-              letter-spacing: 0.5px;
-              margin-left: 8px;
-            }
-            
-            .no-versions {
-              text-align: center;
-              color: #6c757d;
-              font-style: italic;
-              padding: 20px;
-              background: white;
-              border-radius: 8px;
-              border: 1px dashed #dee2e6;
-            }
-
-            /* Version Download Modal Styles */
-            .version-download-modal .ant-modal-content {
-              border-radius: 16px;
-            }
-            
-            .version-download-content {
-              padding: 20px 0;
-            }
-            
-            .download-info {
-              display: flex;
-              flex-direction: column;
-              gap: 20px;
-            }
-            
-            .file-info {
-              background: #f8f9fa;
-              border-radius: 12px;
-              padding: 20px;
-              border: 1px solid #e9ecef;
-            }
-            
-            .file-name-title {
-              display: flex;
-              align-items: center;
-              margin: 0 0 15px 0;
-              font-size: 18px;
-              font-weight: 600;
-              color: #495057;
-            }
-            
-            .file-name-title .file-icon {
-              margin-right: 12px;
-              font-size: 20px;
-            }
-            
-            .version-details {
-              display: flex;
-              flex-direction: column;
-              gap: 12px;
-            }
-            
-            .detail-item {
-              display: flex;
-              align-items: center;
-              gap: 8px;
-              padding: 8px 0;
-              border-bottom: 1px solid #e9ecef;
-            }
-            
-            .detail-item:last-child {
-              border-bottom: none;
-            }
-            
-            .detail-label {
-              font-weight: 600;
-              color: #6c757d;
-              min-width: 120px;
-            }
-            
-            .detail-value {
-              color: #495057;
-              font-family: 'Monaco', 'Menlo', monospace;
-              font-size: 13px;
-              display: flex;
-              align-items: center;
-              gap: 8px;
-            }
-            
-            .confirmation-message {
-              text-align: center;
-              padding: 20px;
-              background: #fff3cd;
-              border: 1px solid #ffeaa7;
-              border-radius: 8px;
-              color: #856404;
-            }
-            
-            .confirmation-message p {
-              margin: 0;
-              font-weight: 500;
-            }
-            
-            .download-confirm-button {
-              background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
-              border: none;
-              border-radius: 8px;
-              font-weight: 600;
-            }
-            
-            @media (max-width: 768px) {
-              .version-details-grid {
-                grid-template-columns: 1fr;
-                gap: 8px;
-              }
-              
-              .version-header {
-                flex-direction: column;
-                align-items: flex-start;
-                gap: 10px;
-              }
-              
-              .version-actions {
-                justify-content: center;
-                margin-top: 10px;
-              }
-            }
-          `}</style>
         </>
       )}
-
-      {/* Enhanced CSS Styles with Larger Logo */}
-      <style jsx>{`
-        .file-container {
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          min-height: 100vh;
-          padding: 20px;
-          font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
-        }
-
-        .header-container {
-          background: rgba(255, 255, 255, 0.95);
-          backdrop-filter: blur(20px);
-          border-radius: 20px;
-          padding: 40px 48px;
-          margin-bottom: 32px;
-          box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-          border: 1px solid rgba(255, 255, 255, 0.2);
-        }
-
-        .header-content {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          gap: 32px;
-        }
-
-        .title-section {
-          flex: 1;
-        }
-
-        .main-title {
-          font-size: 2.5rem;
-          font-weight: 700;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          -webkit-background-clip: text;
-          -webkit-text-fill-color: transparent;
-          background-clip: text;
-          margin: 0;
-          letter-spacing: -0.025em;
-        }
-
-        .subtitle {
-          font-size: 1.125rem;
-          color: #6B7280;
-          margin: 8px 0 0 0;
-          font-weight: 500;
-        }
-
-        .logo-section {
-          flex-shrink: 0;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-
-        .company-logo {
-          max-width: 280px;
-          max-height: 120px;
-          width: auto;
-          height: auto;
-          object-fit: contain;
-          border-radius: 16px;
-          box-shadow: 0 8px 12px -2px rgba(0, 0, 0, 0.15);
-          transition: transform 0.3s ease, box-shadow 0.3s ease;
-        }
-
-        .company-logo:hover {
-          transform: scale(1.02);
-          box-shadow: 0 12px 20px -4px rgba(0, 0, 0, 0.2);
-        }
-
-        .upload-section {
-          text-align: center;
-          margin-bottom: 32px;
-        }
-
-        .upload-button {
-          background: linear-gradient(135deg, #10B981 0%, #059669 100%);
-          border: none;
-          border-radius: 16px;
-          padding: 16px 32px;
-          font-size: 16px;
-          font-weight: 600;
-          height: auto;
-          box-shadow: 0 10px 15px -3px rgba(16, 185, 129, 0.3);
-          transition: all 0.3s ease;
-        }
-
-        .upload-button:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 20px 25px -5px rgba(16, 185, 129, 0.4);
-        }
-
-        .custom-modal .ant-modal-content {
-          border-radius: 20px;
-          overflow: hidden;
-          box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-        }
-
-        .modal-title {
-          display: flex;
-          align-items: center;
-          font-size: 1.25rem;
-          font-weight: 600;
-          color: #1F2937;
-        }
-
-        .modal-icon {
-          margin-right: 12px;
-          font-size: 1.5rem;
-        }
-
-        .directory-name {
-          color: #10B981;
-          font-weight: 700;
-        }
-
-        .upload-options {
-          margin: 24px 0;
-        }
-
-        .radio-group {
-          display: flex;
-          flex-direction: column;
-          gap: 16px;
-        }
-
-        .radio-option {
-          padding: 16px;
-          border: 2px solid #E5E7EB;
-          border-radius: 12px;
-          transition: all 0.3s ease;
-        }
-
-        .radio-option:hover {
-          border-color: #10B981;
-          background: #F0FDF4;
-        }
-
-        .radio-label {
-          display: flex;
-          align-items: center;
-          font-weight: 500;
-          color: #374151;
-        }
-
-        .radio-icon {
-          margin-right: 12px;
-          font-size: 1.25rem;
-        }
-
-        .selected-files {
-          margin-top: 24px;
-          padding: 20px;
-          background: #F8FAFC;
-          border-radius: 12px;
-          border: 1px solid #E2E8F0;
-        }
-
-        .selected-files-title {
-          margin: 0 0 16px 0;
-          font-size: 1rem;
-          font-weight: 600;
-          color: #1E293B;
-        }
-
-        .files-count {
-          background: #10B981;
-          color: white;
-          padding: 4px 8px;
-          border-radius: 6px;
-          font-size: 0.875rem;
-          font-weight: 700;
-        }
-
-        .file-list {
-          max-height: 200px;
-          overflow-y: auto;
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
-        }
-
-        .file-item {
-          display: flex;
-          align-items: center;
-          padding: 8px 12px;
-          background: white;
-          border-radius: 8px;
-          border: 1px solid #E2E8F0;
-        }
-
-        .file-icon {
-          margin-right: 8px;
-          font-size: 1rem;
-        }
-
-        .file-name {
-          color: #475569;
-          font-size: 0.875rem;
-          font-weight: 500;
-        }
-
-        .more-files {
-          background: #F1F5F9;
-          font-style: italic;
-        }
-
-        .directory-upload-content {
-          margin: 20px 0;
-        }
-
-        .target-directory {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          margin-bottom: 12px;
-          padding: 12px;
-          background: #EFF6FF;
-          border-radius: 8px;
-          border: 1px solid #DBEAFE;
-        }
-
-        .label {
-          font-weight: 600;
-          color: #1E40AF;
-        }
-
-        .directory-path {
-          font-family: 'JetBrains Mono', monospace;
-          background: #3B82F6;
-          color: white;
-          padding: 4px 8px;
-          border-radius: 4px;
-          font-size: 0.875rem;
-          font-weight: 500;
-        }
-
-        .instruction {
-          color: #6B7280;
-          margin: 0;
-          font-size: 0.875rem;
-        }
-
-        .directory-files {
-          background: #F0F9FF;
-          border-color: #BAE6FD;
-        }
-
-        .cancel-button {
-          border-radius: 8px;
-          border: 1px solid #D1D5DB;
-          color: #6B7280;
-          font-weight: 500;
-        }
-
-        .select-files-button {
-          background: #F3F4F6;
-          border: 1px solid #D1D5DB;
-          border-radius: 8px;
-          color: #374151;
-          font-weight: 500;
-        }
-
-        .upload-modal-button {
-          background: linear-gradient(135deg, #10B981 0%, #059669 100%);
-          border: none;
-          border-radius: 8px;
-          font-weight: 600;
-        }
-
-        .custom-loader {
-          display: flex;
-          flex-direction: column;
-          justify-content: center;
-          align-items: center;
-          height: 300px;
-          background: rgba(255, 255, 255, 0.95);
-          backdrop-filter: blur(20px);
-          border-radius: 20px;
-          box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
-        }
-
-        .spinner {
-          width: 40px;
-          height: 40px;
-          border: 4px solid #E5E7EB;
-          border-top: 4px solid #667eea;
-          border-radius: 50%;
-          animation: spin 1s linear infinite;
-          margin-bottom: 16px;
-        }
-
-        .loader-text {
-          font-size: 1.125rem;
-          font-weight: 600;
-          color: #667eea;
-        }
-
-        .no-files-message {
-          text-align: center;
-          padding: 60px 20px;
-          background: rgba(255, 255, 255, 0.95);
-          backdrop-filter: blur(20px);
-          border-radius: 20px;
-          box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
-          font-size: 1.25rem;
-          font-weight: 600;
-          color: #6B7280;
-        }
-
-        .file-table {
-          width: 100%;
-          background: rgba(255, 255, 255, 0.95);
-          backdrop-filter: blur(20px);
-          border-radius: 20px;
-          box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
-          border-collapse: collapse;
-          overflow: hidden;
-          margin-bottom: 20px;
-        }
-
-        .file-table th {
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          color: white;
-          padding: 16px 12px;
-          text-align: left;
-          font-weight: 600;
-          font-size: 0.875rem;
-          letter-spacing: 0.025em;
-        }
-
-        .file-table td {
-          padding: 12px;
-          border-bottom: 1px solid #E5E7EB;
-          font-size: 15px;
-          // color: #374151;
-          vertical-align: middle;
-        }
-
-        .file-table tr:hover {
-          background: rgba(102, 126, 234, 0.05);
-        }
-
-        .child-file {
-          background: rgba(102, 126, 234, 0.02) !important;
-        }
-
-        .child-file:hover {
-          background: rgba(102, 126, 234, 0.08) !important;
-        }
-
-        .lock-btn, .unlock-btn {
-          background: linear-gradient(135deg, #EF4444 0%, #DC2626 100%);
-          color: white;
-          border: none;
-          border-radius: 6px;
-          padding: 6px 12px;
-          font-size: 15px;
-          font-weight: 600;
-          cursor: pointer;
-          transition: all 0.2s ease;
-        }
-
-        .unlock-btn {
-          background: linear-gradient(135deg, #10B981 0%, #059669 100%);
-        }
-
-        .lock-btn:hover {
-          background: linear-gradient(135deg, #DC2626 0%, #B91C1C 100%);
-          transform: translateY(-1px);
-        }
-
-        .unlock-btn:hover {
-          background: linear-gradient(135deg, #059669 0%, #047857 100%);
-          transform: translateY(-1px);
-        }
-
-        .pagination-container {
-          display: flex;
-          justify-content: center;
-          background: rgba(255, 255, 255, 0.95);
-          backdrop-filter: blur(20px);
-          border-radius: 16px;
-          padding: 24px;
-          box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-          margin-top: 20px;
-        }
-
-        .custom-pagination .ant-pagination-item {
-          border-radius: 8px;
-          border: 1px solid #E5E7EB;
-        }
-
-        .custom-pagination .ant-pagination-item-active {
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          border-color: #667eea;
-        }
-
-        .custom-pagination .ant-pagination-item-active a {
-          color: white;
-        }
-
-        .custom-pagination .ant-pagination-options-quick-jumper input {
-          border-radius: 6px;
-          border: 1px solid #D1D5DB;
-        }
-
-        .custom-pagination .ant-select-selector {
-          border-radius: 6px;
-          border: 1px solid #D1D5DB;
-        }
-
-        @keyframes spin {
-          0% {
-            transform: rotate(0deg);
-          }
-          100% {
-            transform: rotate(360deg);
-          }
-        }
-
-        @media (max-width: 768px) {
-          .file-container {
-            padding: 12px;
-          }
-          
-          .header-container {
-            padding: 24px 20px;
-          }
-          
-          .header-content {
-            flex-direction: column;
-            gap: 24px;
-            text-align: center;
-          }
-          
-          .main-title {
-            font-size: 2rem;
-          }
-
-          .company-logo {
-            max-width: 240px;
-            max-height: 100px;
-          }
-
-          .file-table {
-            font-size: 0.75rem;
-          }
-
-          .file-table th,
-          .file-table td {
-            padding: 8px 6px;
-          }
-        }
-
-        @media (max-width: 480px) {
-          .header-container {
-            padding: 20px 16px;
-          }
-          
-          .main-title {
-            font-size: 1.75rem;
-          }
-
-          .company-logo {
-            max-width: 200px;
-            max-height: 80px;
-          }
-
-          .file-table {
-            font-size: 0.6875rem;
-          }
-
-          .file-table th,
-          .file-table td {
-            padding: 6px 4px;
-          }
-        }
-      `}</style>
     </div>
   );
 };
