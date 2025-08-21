@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Pagination, Modal, Radio, Button, Tooltip } from "antd";
+import { Pagination, Modal, Radio, Button, Tooltip, Input, Switch } from "antd";
+import { SearchOutlined, ClearOutlined } from "@ant-design/icons";
 import toast, { Toaster } from "react-hot-toast";
 import "./FileList.css";
 import { getUserFromToken } from "./auth";
-
 
 const API_BASE_URL = process.env.REACT_APP_FETCH_API_ENDPOINT;
 console.log("API_BASE_URL", API_BASE_URL);
@@ -15,29 +15,178 @@ const FileList = () => {
   const [user, setUser] = useState(null);
   const [pageSize, setPageSize] = useState(10);
   const [expandedFolders, setExpandedFolders] = useState(new Set());
-  const [downloadingFiles, setDownloadingFiles] = useState(new Set()); // Track downloading files
-  const [expandedVersions, setExpandedVersions] = useState(new Set()); // Track expanded version details
+  const [downloadingFiles, setDownloadingFiles] = useState(new Set());
+  const [expandedVersions, setExpandedVersions] = useState(new Set());
+
+  // Search related state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState([]);
+  const [showVersionsInSearch, setShowVersionsInSearch] = useState(false);
+  const [isSearchMode, setIsSearchMode] = useState(false);
 
   const [uploadModalVisible, setUploadModalVisible] = useState(false);
   const [uploadType, setUploadType] = useState(null);
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
 
-  // New state for directory upload
   const [directoryUploadModalVisible, setDirectoryUploadModalVisible] =
     useState(false);
   const [targetDirectory, setTargetDirectory] = useState("");
   const [directorySelectedFiles, setDirectorySelectedFiles] = useState([]);
   const [directoryUploading, setDirectoryUploading] = useState(false);
 
-  // New state for version download modal
-  const [versionDownloadModalVisible, setVersionDownloadModalVisible] = useState(false);
+  const [versionDownloadModalVisible, setVersionDownloadModalVisible] =
+    useState(false);
   const [selectedVersion, setSelectedVersion] = useState(null);
   const [downloadingVersion, setDownloadingVersion] = useState(false);
+
+  const [fileComments, setFileComments] = useState({});
+  const [showComments, setShowComments] = useState(false);
 
   const fileInputRef = useRef();
   const folderInputRef = useRef();
   const directoryFileInputRef = useRef();
+
+  // Search functionality
+  const performSearch = async (query) => {
+    if (!query.trim()) {
+      setIsSearchMode(false);
+      setSearchResults([]);
+      return;
+    }
+
+    setIsSearching(true);
+    try {
+      const searchParams = new URLSearchParams({
+        q: query.trim(),
+        include_tags: "false",
+        max_keys: "1000",
+      });
+
+      const response = await fetch(`${API_BASE_URL}/search?${searchParams}`, {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      if (!response.ok) {
+        throw new Error(
+          `Search failed: ${response.status} ${response.statusText}`
+        );
+      }
+
+      const result = await response.json();
+      const searchItems = result.items || [];
+
+      // Fetch lock status for search results
+      const lockRes = await fetch(`${API_BASE_URL}/list`).then((r) => r.json());
+      const lockMap = {};
+      lockRes.forEach((item) => {
+        lockMap[item.filename] = {
+          locked: item.status === "locked",
+          lockedBy: item.locked_by || null,
+          timestamp: item.timestamp || null,
+        };
+      });
+
+      // Map search results to file format
+      const searchResultsWithLockInfo = searchItems.map((item) => ({
+        fileName: item.key,
+        fullPath: item.key,
+        locked: lockMap[item.key]?.locked || false,
+        lockedBy: lockMap[item.key]?.lockedBy || null,
+        timestamp: lockMap[item.key]?.timestamp || null,
+        size: item.size,
+        lastModified: item.last_modified,
+        eTag: item.e_tag,
+        isFolder: false,
+        isSearchResult: true,
+      }));
+
+      // ALWAYS fetch versions for search results
+      console.log("Fetching versions for search results...");
+      const resultsWithVersions = await Promise.all(
+        searchResultsWithLockInfo.map(async (file) => {
+          try {
+            console.log(`Fetching versions for file: ${file.fileName}`);
+            const versions = await fetchFileVersions(file.fileName);
+            console.log(
+              `Fetched ${versions.length} versions for ${file.fileName}:`,
+              versions
+            );
+            file.versions = versions;
+            return file;
+          } catch (error) {
+            console.error(
+              `Error fetching versions for ${file.fileName}:`,
+              error
+            );
+            file.versions = [];
+            return file;
+          }
+        })
+      );
+
+      setSearchResults(resultsWithVersions);
+      setIsSearchMode(true);
+      setCurrentPage(1);
+
+      // If showVersionsInSearch is true, expand versions for all search results
+      if (showVersionsInSearch) {
+        const newExpandedVersions = new Set();
+        resultsWithVersions.forEach((file) => {
+          if (!file.isFolder) {
+            newExpandedVersions.add(file.fullPath || file.fileName);
+          }
+        });
+        setExpandedVersions(newExpandedVersions);
+      }
+    } catch (error) {
+      console.error("Search error:", error);
+      toast.error(`Search failed: ${error.message}`);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const handleSearchSubmit = (e) => {
+    e.preventDefault();
+    performSearch(searchQuery);
+  };
+
+  const handleClearSearch = () => {
+    setSearchQuery("");
+    setIsSearchMode(false);
+    setSearchResults([]);
+    setCurrentPage(1);
+    // Clear expanded versions when clearing search
+    setExpandedVersions(new Set());
+  };
+
+  // Updated handleVersionToggleSearch function
+  const handleVersionToggleSearch = async (newShowVersions) => {
+    setShowVersionsInSearch(newShowVersions);
+
+    if (newShowVersions) {
+      // Show versions - expand all search results
+      const newExpandedVersions = new Set();
+      searchResults.forEach((file) => {
+        if (!file.isFolder) {
+          newExpandedVersions.add(file.fullPath || file.fileName);
+        }
+      });
+      setExpandedVersions(newExpandedVersions);
+
+      console.log(
+        "Show versions toggled ON, expanded versions:",
+        newExpandedVersions
+      );
+    } else {
+      // Hide versions - collapse all
+      setExpandedVersions(new Set());
+      console.log("Show versions toggled OFF, collapsed all versions");
+    }
+  };
 
   const fetchFileVersions = async (filename) => {
     try {
@@ -55,7 +204,6 @@ const FileList = () => {
     }
   };
 
-  // Helper function to decode base64 content
   const decodeBase64Content = (base64String) => {
     try {
       return atob(base64String);
@@ -65,52 +213,42 @@ const FileList = () => {
     }
   };
 
-  // Helper function to create proper blob from response
   const createBlobFromResponse = async (response) => {
-  try {
-    // The new backend always returns JSON with structured data
-    const responseData = await response.json();
-    
-    if (responseData.content_base64) {
-      // Decode base64 content properly
-      const binaryString = atob(responseData.content_base64);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
-      
-      // Use the content_type from backend response
-      return new Blob([bytes], { 
-        type: responseData.content_type || 'application/octet-stream' 
-      });
-    } else if (responseData.content) {
-      // Direct content (fallback)
-      return new Blob([responseData.content], { 
-        type: responseData.content_type || 'text/plain' 
-      });
-    } else {
-      throw new Error('No content found in response');
-    }
-    
-  } catch (error) {
-    console.error("Error creating blob from response:", error);
-    // Fallback: treat as text
-    const text = await response.text();
-    return new Blob([text], { type: 'text/plain' });
-  }
-};
+    try {
+      const responseData = await response.json();
 
-  // Helper function to organize files into folder structure (with nested folder support)
+      if (responseData.content_base64) {
+        const binaryString = atob(responseData.content_base64);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+
+        return new Blob([bytes], {
+          type: responseData.content_type || "application/octet-stream",
+        });
+      } else if (responseData.content) {
+        return new Blob([responseData.content], {
+          type: responseData.content_type || "text/plain",
+        });
+      } else {
+        throw new Error("No content found in response");
+      }
+    } catch (error) {
+      console.error("Error creating blob from response:", error);
+      const text = await response.text();
+      return new Blob([text], { type: "text/plain" });
+    }
+  };
+
   const organizeFiles = (fileList) => {
     const organized = [];
     const folderMap = {};
 
-    // Recursive function to organize nested structure
     const organizeNested = (items, currentMap, parentPath = "") => {
       items.forEach((file) => {
         const { fileName, locked, lockedBy, timestamp } = file;
 
-        // Check if this is a file within a folder (has forward slash)
         if (fileName.includes("/")) {
           const parts = fileName.split("/");
           const folderName = parts[0];
@@ -132,9 +270,7 @@ const FileList = () => {
             };
           }
 
-          // If there are more path segments, it's either a nested folder or file in nested folder
           if (subPath.includes("/")) {
-            // It's a nested structure, recursively organize
             organizeNested(
               [
                 {
@@ -148,7 +284,6 @@ const FileList = () => {
               fullFolderPath
             );
           } else {
-            // It's a direct file in this folder
             currentMap[folderName].children.push({
               fileName: subPath,
               fullPath: parentPath
@@ -161,7 +296,6 @@ const FileList = () => {
             });
           }
         } else {
-          // Regular file (not in a folder)
           organized.push({
             fileName,
             locked,
@@ -173,10 +307,8 @@ const FileList = () => {
       });
     };
 
-    // Start the organization process
     organizeNested(fileList, folderMap);
 
-    // Convert childrenMap to children array for nested folders
     const processNestedFolders = (folderObj) => {
       if (
         folderObj.childrenMap &&
@@ -190,7 +322,6 @@ const FileList = () => {
       delete folderObj.childrenMap;
     };
 
-    // Process all folders to convert nested maps to arrays
     Object.values(folderMap).forEach((folder) => {
       processNestedFolders(folder);
       organized.push(folder);
@@ -199,12 +330,10 @@ const FileList = () => {
     return organized;
   };
 
-  // Helper function to flatten organized files for display with expansion (with nested folder support)
   const flattenForDisplay = (organizedFiles, level = 0) => {
     const flattened = [];
 
     organizedFiles.forEach((item) => {
-      // Add the current item with its nesting level
       flattened.push({
         ...item,
         nestingLevel: level,
@@ -214,7 +343,6 @@ const FileList = () => {
       if (item.isFolder && expandedFolders.has(folderKey)) {
         item.children.forEach((child) => {
           if (child.isFolder) {
-            // Recursively flatten nested folders
             const nestedItems = flattenForDisplay([child], level + 1);
             nestedItems.forEach((nestedItem) => {
               flattened.push({
@@ -225,7 +353,6 @@ const FileList = () => {
               });
             });
           } else {
-            // Regular file in folder
             flattened.push({
               ...child,
               isChild: true,
@@ -240,140 +367,167 @@ const FileList = () => {
     return flattened;
   };
 
-  // ✅ New function to handle version toggle
-  const handleVersionToggle = (fileName) => {
+  const handleVersionToggle = async (fileName) => {
     const newExpandedVersions = new Set(expandedVersions);
     if (newExpandedVersions.has(fileName)) {
       newExpandedVersions.delete(fileName);
+      console.log(`Collapsed versions for: ${fileName}`);
     } else {
       newExpandedVersions.add(fileName);
+      console.log(`Expanded versions for: ${fileName}`);
+
+      // If this is a search result and we don't have versions yet, fetch them
+      if (isSearchMode) {
+        const file = searchResults.find(
+          (f) => (f.fullPath || f.fileName) === fileName
+        );
+        if (file && (!file.versions || file.versions.length === 0)) {
+          console.log(`Fetching versions for search result: ${fileName}`);
+          try {
+            const versions = await fetchFileVersions(fileName);
+            console.log(
+              `Fetched ${versions.length} versions for ${fileName}:`,
+              versions
+            );
+
+            // Update the search results with the fetched versions
+            const updatedSearchResults = searchResults.map((f) => {
+              if ((f.fullPath || f.fileName) === fileName) {
+                return { ...f, versions };
+              }
+              return f;
+            });
+            setSearchResults(updatedSearchResults);
+          } catch (error) {
+            console.error(`Error fetching versions for ${fileName}:`, error);
+          }
+        }
+      }
     }
     setExpandedVersions(newExpandedVersions);
   };
 
-  // ✅ New function to handle version download modal
   const handleVersionDownload = (fileName, version) => {
     setSelectedVersion({
       fileName,
       version,
-      displayName: fileName.includes("/") ? fileName.split("/").pop() : fileName
+      displayName: fileName.includes("/")
+        ? fileName.split("/").pop()
+        : fileName,
     });
     setVersionDownloadModalVisible(true);
   };
 
-  // ✅ FIXED function to confirm and download specific version
-const confirmVersionDownload = async () => {
-  if (!selectedVersion) return;
+  const confirmVersionDownload = async () => {
+    if (!selectedVersion) return;
 
-  const { fileName, version, displayName } = selectedVersion;
-  const downloadKey = `${fileName}-${version.VersionId}`;
+    const { fileName, version, displayName } = selectedVersion;
+    const downloadKey = `${fileName}-${version.VersionId}`;
 
-  // Add to downloading state
-  setDownloadingVersion(true);
-  setDownloadingFiles((prev) => new Set(prev).add(downloadKey));
+    setDownloadingVersion(true);
+    setDownloadingFiles((prev) => new Set(prev).add(downloadKey));
 
-  try {
-    // Create request payload for version download
-    const requestBody = {
-      filename: fileName,
-      // Send versionId - backend handles both version_id and versionId
-      versionId: version.VersionId
-    };
+    try {
+      const requestBody = {
+        filename: fileName,
+        versionId: version.VersionId,
+      };
 
-    console.log('Downloading version with payload:', requestBody);
+      console.log("Downloading version with payload:", requestBody);
 
-    const response = await fetch(`${API_BASE_URL}/download`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(requestBody),
-    });
+      const response = await fetch(`${API_BASE_URL}/download`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+      });
 
-    if (!response.ok) {
-      throw new Error(
-        `Download failed: ${response.status} ${response.statusText}`
-      );
-    }
-
-    // Parse the JSON response first to get the enhanced information
-    const responseData = await response.json();
-    console.log('Backend response:', responseData);
-
-    // Verify we got the correct version
-    if (responseData.version_id) {
-      console.log(`Downloaded version ID: ${responseData.version_id}`);
-      console.log(`Requested version ID: ${version.VersionId}`);
-      
-      if (responseData.version_id !== version.VersionId) {
-        console.warn('Version ID mismatch! Requested:', version.VersionId, 'Got:', responseData.version_id);
+      if (!response.ok) {
+        throw new Error(
+          `Download failed: ${response.status} ${response.statusText}`
+        );
       }
+
+      const responseData = await response.json();
+      console.log("Backend response:", responseData);
+
+      if (responseData.version_id) {
+        console.log(`Downloaded version ID: ${responseData.version_id}`);
+        console.log(`Requested version ID: ${version.VersionId}`);
+
+        if (responseData.version_id !== version.VersionId) {
+          console.warn(
+            "Version ID mismatch! Requested:",
+            version.VersionId,
+            "Got:",
+            responseData.version_id
+          );
+        }
+      }
+
+      const binaryString = atob(responseData.content_base64);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+
+      const blob = new Blob([bytes], {
+        type: responseData.content_type || "application/octet-stream",
+      });
+
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+
+      const fileExtension = displayName.includes(".")
+        ? displayName.split(".").pop()
+        : "";
+      const fileNameWithoutExt = displayName.includes(".")
+        ? displayName.substring(0, displayName.lastIndexOf("."))
+        : displayName;
+
+      let versionLabel;
+      if (version.IsLatest) {
+        versionLabel = "latest";
+      } else if (version.VersionId === "null") {
+        versionLabel = "original";
+      } else {
+        versionLabel = version.VersionId.substring(0, 8);
+      }
+
+      const downloadFileName = fileExtension
+        ? `${fileNameWithoutExt}_v${versionLabel}.${fileExtension}`
+        : `${fileNameWithoutExt}_v${versionLabel}`;
+
+      link.download = downloadFileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      const successMessage = responseData.version_id
+        ? `Version ${responseData.version_id.substring(
+            0,
+            8
+          )}... downloaded as "${downloadFileName}"!`
+        : `File downloaded as "${downloadFileName}"!`;
+
+      toast.success(successMessage);
+
+      setVersionDownloadModalVisible(false);
+      setSelectedVersion(null);
+    } catch (error) {
+      console.error("Version download error:", error);
+      toast.error(`Failed to download version: ${error.message}`);
+    } finally {
+      setDownloadingVersion(false);
+      setDownloadingFiles((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(downloadKey);
+        return newSet;
+      });
     }
+  };
 
-    // Create blob from base64 content with proper content type
-    const binaryString = atob(responseData.content_base64);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
-    
-    const blob = new Blob([bytes], { 
-      type: responseData.content_type || 'application/octet-stream' 
-    });
-
-    // Create download link
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-
-    // Create filename with version info
-    const fileExtension = displayName.includes('.') ? displayName.split('.').pop() : '';
-    const fileNameWithoutExt = displayName.includes('.') ? displayName.substring(0, displayName.lastIndexOf('.')) : displayName;
-    
-    // IMPROVED: Better version labeling using actual version info
-    let versionLabel;
-    if (version.IsLatest) {
-      versionLabel = 'latest';
-    } else if (version.VersionId === "null") {
-      versionLabel = 'original';
-    } else {
-      versionLabel = version.VersionId.substring(0, 8);
-    }
-    
-    const downloadFileName = fileExtension 
-      ? `${fileNameWithoutExt}_v${versionLabel}.${fileExtension}`
-      : `${fileNameWithoutExt}_v${versionLabel}`;
-
-    link.download = downloadFileName;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    window.URL.revokeObjectURL(url);
-
-    // Enhanced success message with version info
-    const successMessage = responseData.version_id 
-      ? `Version ${responseData.version_id.substring(0, 8)}... downloaded as "${downloadFileName}"!`
-      : `File downloaded as "${downloadFileName}"!`;
-    
-    toast.success(successMessage);
-    
-    // Close modal
-    setVersionDownloadModalVisible(false);
-    setSelectedVersion(null);
-
-  } catch (error) {
-    console.error("Version download error:", error);
-    toast.error(`Failed to download version: ${error.message}`);
-  } finally {
-    // Remove from downloading state
-    setDownloadingVersion(false);
-    setDownloadingFiles((prev) => {
-      const newSet = new Set(prev);
-      newSet.delete(downloadKey);
-      return newSet;
-    });
-  }
-};
-
-  // ✅ FIXED function to handle file download (latest version)
   const handleDownload = async (file) => {
     const fileName = file.fullPath || file.fileName;
 
@@ -384,7 +538,6 @@ const confirmVersionDownload = async () => {
       return;
     }
 
-    // Add file to downloading state
     setDownloadingFiles((prev) => new Set(prev).add(fileName));
 
     try {
@@ -400,15 +553,12 @@ const confirmVersionDownload = async () => {
         );
       }
 
-      // FIXED: Use the helper function to properly create blob from response
       const blob = await createBlobFromResponse(response);
 
-      // Create download link
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
 
-      // Extract just the filename for download (remove folder path)
       const downloadFileName = fileName.includes("/")
         ? fileName.split("/").pop()
         : fileName;
@@ -424,7 +574,6 @@ const confirmVersionDownload = async () => {
       console.error("Download error:", error);
       toast.error(`Failed to download file: ${error.message}`);
     } finally {
-      // Remove file from downloading state
       setDownloadingFiles((prev) => {
         const newSet = new Set(prev);
         newSet.delete(fileName);
@@ -433,74 +582,68 @@ const confirmVersionDownload = async () => {
     }
   };
 
-  // ✅ Fetch files from S3 and DynamoDB
-const fetchFiles = async () => {
-  setLoading(true);
-  try {
-    const [s3ResRaw, lockRes] = await Promise.all([
-      fetch(`${API_BASE_URL}/s3-files`).then((r) => r.json()),
-      fetch(`${API_BASE_URL}/list`).then((r) => r.json()),
-    ]);
+  const fetchFiles = async () => {
+    setLoading(true);
+    try {
+      const [s3ResRaw, lockRes] = await Promise.all([
+        fetch(`${API_BASE_URL}/s3-files`).then((r) => r.json()),
+        fetch(`${API_BASE_URL}/list`).then((r) => r.json()),
+      ]);
 
-    // Ensure s3Res is always an array (use 'items' from API response)
-    const s3Res = Array.isArray(s3ResRaw) ? s3ResRaw : s3ResRaw.items || [];
+      const s3Res = Array.isArray(s3ResRaw) ? s3ResRaw : s3ResRaw.items || [];
 
-    const lockMap = {};
-    lockRes.forEach((item) => {
-      lockMap[item.filename] = {
-        locked: item.status === "locked",
-        lockedBy: item.locked_by || null,
-        timestamp: item.timestamp || null,
-      };
-    });
+      const lockMap = {};
+      lockRes.forEach((item) => {
+        lockMap[item.filename] = {
+          locked: item.status === "locked",
+          lockedBy: item.locked_by || null,
+          timestamp: item.timestamp || null,
+        };
+      });
 
-    // Map file objects to expected format
-    const merged = s3Res.map((fileObj) => {
-      const fileName = fileObj.key;
-      return {
-        fileName,
-        locked: lockMap[fileName]?.locked || false,
-        lockedBy: lockMap[fileName]?.lockedBy || null,
-        timestamp: lockMap[fileName]?.timestamp || null,
-        size: fileObj.size,
-        lastModified: fileObj.last_modified,
-        eTag: fileObj.e_tag,
-      };
-    });
+      const merged = s3Res.map((fileObj) => {
+        const fileName = fileObj.key;
+        return {
+          fileName,
+          locked: lockMap[fileName]?.locked || false,
+          lockedBy: lockMap[fileName]?.lockedBy || null,
+          timestamp: lockMap[fileName]?.timestamp || null,
+          size: fileObj.size,
+          lastModified: fileObj.last_modified,
+          eTag: fileObj.e_tag,
+        };
+      });
 
-    const organized = organizeFiles(merged);
+      const organized = organizeFiles(merged);
 
-    // ✅ FIXED: Recursively fetch versions for all files including nested ones
-    const fetchVersionsRecursively = async (items) => {
-      return Promise.all(
-        items.map(async (item) => {
-          if (item.isFolder) {
-            // Recursively process children in folders
-            if (item.children && item.children.length > 0) {
-              item.children = await fetchVersionsRecursively(item.children);
+      const fetchVersionsRecursively = async (items) => {
+        return Promise.all(
+          items.map(async (item) => {
+            if (item.isFolder) {
+              if (item.children && item.children.length > 0) {
+                item.children = await fetchVersionsRecursively(item.children);
+              }
+              return item;
+            } else {
+              const filePathForVersions = item.fullPath || item.fileName;
+              item.versions = await fetchFileVersions(filePathForVersions);
+              return item;
             }
-            return item;
-          } else {
-            // For files, fetch versions using the full path
-            const filePathForVersions = item.fullPath || item.fileName;
-            item.versions = await fetchFileVersions(filePathForVersions);
-            return item;
-          }
-        })
-      );
-    };
+          })
+        );
+      };
 
-    const withVersions = await fetchVersionsRecursively(organized);
+      const withVersions = await fetchVersionsRecursively(organized);
 
-    setFiles(withVersions);
-  } catch (err) {
-    console.error("Error fetching files:", err);
-    toast.error("Failed to fetch files");
-    throw err;
-  } finally {
-    setLoading(false);
-  }
-};
+      setFiles(withVersions);
+    } catch (err) {
+      console.error("Error fetching files:", err);
+      toast.error("Failed to fetch files");
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     const userInfo = getUserFromToken();
@@ -519,9 +662,11 @@ const fetchFiles = async () => {
   };
 
   const handleLockToggle = async (indexOnPage) => {
-    const flattenedFiles = flattenForDisplay(files);
+    const displayFiles = isSearchMode
+      ? searchResults
+      : flattenForDisplay(files);
     const index = (currentPage - 1) * pageSize + indexOnPage;
-    const file = flattenedFiles[index];
+    const file = displayFiles[index];
 
     if (file.isFolder) {
       toast.error("Cannot lock/unlock folders directly");
@@ -536,7 +681,7 @@ const fetchFiles = async () => {
     try {
       const fileName = file.fullPath || file.fileName;
       const endpoint = file.locked ? "unlock" : "lock";
-      const isCurrentlyLocked = file.locked; // Store the current state
+      const isCurrentlyLocked = file.locked;
 
       const payload = file.locked
         ? { filename: fileName }
@@ -549,31 +694,10 @@ const fetchFiles = async () => {
       });
 
       if (response.ok) {
-        // Update the file in the organized structure
-        const updatedFiles = [...files];
-
-        if (file.isChild) {
-          // Find the parent folder and update the child
-          const parentFolder = updatedFiles.find(
-            (f) => f.fileName === file.parentFolder
-          );
-          if (parentFolder) {
-            const childFile = parentFolder.children.find(
-              (c) => c.fullPath === fileName
-            );
-            if (childFile) {
-              childFile.locked = !childFile.locked;
-              childFile.lockedBy = childFile.locked ? user.email : null;
-              childFile.timestamp = childFile.locked
-                ? new Date().toISOString()
-                : null;
-            }
-          }
-        } else {
-          // Regular file
-          const fileToUpdate = updatedFiles.find(
-            (f) => f.fileName === fileName
-          );
+        // Update files in both search results and main files list
+        if (isSearchMode) {
+          const updatedSearchResults = [...searchResults];
+          const fileToUpdate = updatedSearchResults[index];
           if (fileToUpdate) {
             fileToUpdate.locked = !fileToUpdate.locked;
             fileToUpdate.lockedBy = fileToUpdate.locked ? user.email : null;
@@ -581,11 +705,40 @@ const fetchFiles = async () => {
               ? new Date().toISOString()
               : null;
           }
+          setSearchResults(updatedSearchResults);
+        } else {
+          const updatedFiles = [...files];
+          if (file.isChild) {
+            const parentFolder = updatedFiles.find(
+              (f) => f.fileName === file.parentFolder
+            );
+            if (parentFolder) {
+              const childFile = parentFolder.children.find(
+                (c) => c.fullPath === fileName
+              );
+              if (childFile) {
+                childFile.locked = !childFile.locked;
+                childFile.lockedBy = childFile.locked ? user.email : null;
+                childFile.timestamp = childFile.locked
+                  ? new Date().toISOString()
+                  : null;
+              }
+            }
+          } else {
+            const fileToUpdate = updatedFiles.find(
+              (f) => f.fileName === fileName
+            );
+            if (fileToUpdate) {
+              fileToUpdate.locked = !fileToUpdate.locked;
+              fileToUpdate.lockedBy = fileToUpdate.locked ? user.email : null;
+              fileToUpdate.timestamp = fileToUpdate.locked
+                ? new Date().toISOString()
+                : null;
+            }
+          }
+          setFiles(updatedFiles);
         }
 
-        setFiles(updatedFiles);
-
-        // Fix: Use the stored current state to show correct message
         toast.success(
           `File ${isCurrentlyLocked ? "unlocked" : "locked"} successfully`
         );
@@ -614,6 +767,14 @@ const fetchFiles = async () => {
     const files = Array.from(e.target.files);
     setSelectedFiles(files);
 
+    // Initialize comments for each file
+    const initialComments = {};
+    files.forEach((file) => {
+      const fileKey = file.webkitRelativePath || file.name;
+      initialComments[fileKey] = fileComments[fileKey] || ""; // Preserve existing comments
+    });
+    setFileComments(initialComments);
+
     if (uploadType === "file" && fileInputRef.current)
       fileInputRef.current.value = "";
     if (uploadType === "folder" && folderInputRef.current)
@@ -623,11 +784,11 @@ const fetchFiles = async () => {
   const resetUploadState = () => {
     setSelectedFiles([]);
     setUploadType(null);
+    setFileComments({});
     if (fileInputRef.current) fileInputRef.current.value = "";
     if (folderInputRef.current) folderInputRef.current.value = "";
   };
 
-  // New function to handle directory upload
   const handleDirectoryUpload = (folderName, folderFullPath) => {
     setTargetDirectory(folderFullPath || folderName);
     setDirectoryUploadModalVisible(true);
@@ -636,11 +797,20 @@ const fetchFiles = async () => {
   const handleDirectoryFileChange = (e) => {
     const files = Array.from(e.target.files);
     setDirectorySelectedFiles(files);
+
+    // Initialize comments for directory files
+    const initialComments = {};
+    files.forEach((file) => {
+      const fileKey = `${targetDirectory}/${file.name}`;
+      initialComments[fileKey] = "";
+    });
+    setFileComments(initialComments);
   };
 
   const resetDirectoryUploadState = () => {
     setDirectorySelectedFiles([]);
     setTargetDirectory("");
+    setFileComments({});
     if (directoryFileInputRef.current) directoryFileInputRef.current.value = "";
   };
 
@@ -665,13 +835,20 @@ const fetchFiles = async () => {
               const reader = new FileReader();
               reader.onload = () => {
                 const base64Content = reader.result.split(",")[1];
-                // Prepend the target directory to the file path
                 const fileKey = `${targetDirectory}/${file.name}`;
-                resolve({
+                const filePayload = {
                   key: fileKey,
                   content_base64: base64Content,
                   content_type: file.type || "application/octet-stream",
-                });
+                };
+
+                // Add comment if provided
+                const comment = fileComments[fileKey];
+                if (comment && comment.trim()) {
+                  filePayload.comment = comment.trim();
+                }
+
+                resolve(filePayload);
               };
               reader.onerror = reject;
               reader.readAsDataURL(file);
@@ -763,11 +940,20 @@ const fetchFiles = async () => {
               const reader = new FileReader();
               reader.onload = () => {
                 const base64Content = reader.result.split(",")[1];
-                resolve({
-                  key: file.webkitRelativePath || file.name,
+                const fileKey = file.webkitRelativePath || file.name;
+                const filePayload = {
+                  key: fileKey,
                   content_base64: base64Content,
                   content_type: file.type || "application/octet-stream",
-                });
+                };
+
+                // Add comment if provided
+                const comment = fileComments[fileKey];
+                if (comment && comment.trim()) {
+                  filePayload.comment = comment.trim();
+                }
+
+                resolve(filePayload);
               };
               reader.onerror = reject;
               reader.readAsDataURL(file);
@@ -838,12 +1024,10 @@ const fetchFiles = async () => {
     }
   };
 
-  const flattenedFiles = flattenForDisplay(files);
+  // Get the files to display (either search results or normal files)
+  const displayFiles = isSearchMode ? searchResults : flattenForDisplay(files);
   const startIndex = (currentPage - 1) * pageSize;
-  const paginatedFiles = flattenedFiles.slice(
-    startIndex,
-    startIndex + pageSize
-  );
+  const paginatedFiles = displayFiles.slice(startIndex, startIndex + pageSize);
 
   const formatDateTime = (timestamp) => {
     if (!timestamp) return "-";
@@ -863,18 +1047,75 @@ const fetchFiles = async () => {
     return `${dateStr}, ${timeStr}`;
   };
 
-  const formatFileSize = (bytes) => {
-    if (!bytes) return "-";
-    const units = ['B', 'KB', 'MB', 'GB'];
-    let size = bytes;
-    let unitIndex = 0;
-    
-    while (size >= 1024 && unitIndex < units.length - 1) {
-      size /= 1024;
-      unitIndex++;
+  const CommentCell = ({ fileName }) => {
+    const [comment, setComment] = useState("");
+    const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+      const loadComment = async () => {
+        setLoading(true);
+        const fetchedComment = await fetchFileComments(fileName);
+        setComment(fetchedComment);
+        setLoading(false);
+      };
+      loadComment();
+    }, [fileName]);
+
+    if (loading) {
+      return (
+        <span style={{ color: "#999", fontSize: "12px" }}>Loading...</span>
+      );
     }
-    
-    return `${size.toFixed(1)} ${units[unitIndex]}`;
+
+    if (!comment) {
+      return (
+        <span style={{ color: "#ccc", fontSize: "12px" }}>No comment</span>
+      );
+    }
+
+    return (
+      <Tooltip title={comment} placement="topLeft">
+        <div
+          style={{
+            maxWidth: "150px",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            fontSize: "15px",
+            // color: "#666",
+          }}
+        >
+          {comment}
+        </div>
+      </Tooltip>
+    );
+  };
+
+  // Add function to handle comment changes
+  const handleCommentChange = (fileKey, comment) => {
+    setFileComments((prev) => ({
+      ...prev,
+      [fileKey]: comment,
+    }));
+  };
+
+  // Add function to fetch and display comments in file list
+  const fetchFileComments = async (fileName) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/tags`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: fileName }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        return data.tags?.comment || "";
+      }
+    } catch (error) {
+      console.error("Error fetching comments:", error);
+    }
+    return "";
   };
 
   return (
@@ -895,7 +1136,8 @@ const fetchFiles = async () => {
             fontWeight: "500",
             borderRadius: "12px",
             padding: "16px",
-            boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)",
+            boxShadow:
+              "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)",
           },
           success: {
             duration: 4000,
@@ -918,7 +1160,7 @@ const fetchFiles = async () => {
       <div className="header-container">
         <div className="header-content">
           <div className="title-section">
-            <h1 className="main-title">S3 File Manager</h1>
+            <h1 className="main-title">File Manager</h1>
             <p className="subtitle">Files in S3 Bucket</p>
           </div>
           <div className="logo-section">
@@ -931,18 +1173,76 @@ const fetchFiles = async () => {
         </div>
       </div>
 
-      {/* Enhanced Upload Button */}
-      <div className="upload-section">
-        <Button
-          type="primary"
-          size="large"
-          onClick={() => setUploadModalVisible(true)}
-          loading={uploading}
-          disabled={uploading}
-          className="upload-button"
-        >
-          {uploading ? "Processing..." : "Click here to choose files"}
-        </Button>
+      {/* Enhanced Search and Upload Section */}
+      <div className="controls-section">
+        {/* Search Section */}
+        <div className="search-section">
+          <form onSubmit={handleSearchSubmit} className="search-form">
+            <div className="search-input-container">
+              <Input
+                placeholder="Search files by name..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                prefix={<SearchOutlined />}
+                size="large"
+                className="search-input"
+                disabled={isSearching}
+              />
+              <Button
+                type="primary"
+                htmlType="submit"
+                size="large"
+                loading={isSearching}
+                disabled={!searchQuery.trim()}
+                className="search-button"
+              >
+                {isSearching ? "Searching..." : "Search"}
+              </Button>
+              {(isSearchMode || searchQuery) && (
+                <Button
+                  size="large"
+                  onClick={handleClearSearch}
+                  className="clear-search-button"
+                  icon={<ClearOutlined />}
+                >
+                  Clear
+                </Button>
+              )}
+            </div>
+          </form>
+
+          {/* Show Versions Toggle for Search */}
+          {isSearchMode && (
+            <div className="search-options">
+              <div className="version-toggle-container">
+                <span className="toggle-label">Show Versions:</span>
+                <Switch
+                  checked={showVersionsInSearch}
+                  onChange={handleVersionToggleSearch}
+                  loading={isSearching}
+                  size="default"
+                />
+              </div>
+              <div className="search-info">
+                Found {searchResults.length} file(s) matching "{searchQuery}"
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Upload Section */}
+        <div className="upload-section">
+          <Button
+            type="primary"
+            size="large"
+            onClick={() => setUploadModalVisible(true)}
+            loading={uploading}
+            disabled={uploading}
+            className="upload-button"
+          >
+            {uploading ? "Processing..." : "Click here to choose files"}
+          </Button>
+        </div>
       </div>
 
       {/* Enhanced Upload Modal */}
@@ -1033,23 +1333,37 @@ const fetchFiles = async () => {
         />
 
         {selectedFiles.length > 0 && (
-          <div className="selected-files">
+          <div className="selected-files with-comments">
             <h4 className="selected-files-title">
-              <span className="files-count">{selectedFiles.length}</span> file(s) selected:
+              <span className="files-count">{selectedFiles.length}</span>{" "}
+              file(s) selected:
             </h4>
-            <div className="file-list">
-              {selectedFiles.slice(0, 10).map((file, index) => (
-                <div key={index} className="file-item">
-                  <span className="file-icon">📄</span>
-                  <span className="file-name">{file.webkitRelativePath || file.name}</span>
-                </div>
-              ))}
-              {selectedFiles.length > 10 && (
-                <div className="file-item more-files">
-                  <span className="file-icon">⋯</span>
-                  <span className="file-name">and {selectedFiles.length - 10} more files</span>
-                </div>
-              )}
+            <div className="file-list-with-comments">
+              {selectedFiles.map((file, index) => {
+                const fileKey = file.webkitRelativePath || file.name;
+                return (
+                  <div key={index} className="file-item-with-comment">
+                    <div className="file-info">
+                      <span className="file-icon">📄</span>
+                      <span className="file-name">{fileKey}</span>
+                    </div>
+                    <div className="comment-input-container">
+                      <Input.TextArea
+                        placeholder="Add a comment for this file (optional)"
+                        value={fileComments[fileKey] || ""}
+                        onChange={(e) =>
+                          handleCommentChange(fileKey, e.target.value)
+                        }
+                        disabled={uploading}
+                        rows={2}
+                        maxLength={250}
+                        showCount
+                        className="comment-input"
+                      />
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -1061,7 +1375,8 @@ const fetchFiles = async () => {
         title={
           <div className="modal-title">
             <span className="modal-icon">📂</span>
-            Upload to Directory: <span className="directory-name">{targetDirectory}</span>
+            Upload to Directory:{" "}
+            <span className="directory-name">{targetDirectory}</span>
           </div>
         }
         onCancel={() => {
@@ -1110,7 +1425,9 @@ const fetchFiles = async () => {
             <span className="label">Target Directory:</span>
             <span className="directory-path">{targetDirectory}</span>
           </div>
-          <p className="instruction">Select files to upload to this directory</p>
+          <p className="instruction">
+            Select files to upload to this directory
+          </p>
         </div>
 
         <input
@@ -1123,29 +1440,45 @@ const fetchFiles = async () => {
         />
 
         {directorySelectedFiles.length > 0 && (
-          <div className="selected-files directory-files">
+          <div className="selected-files with-comments directory-files">
             <h4 className="selected-files-title">
-              <span className="files-count">{directorySelectedFiles.length}</span> file(s) selected for {targetDirectory}:
+              <span className="files-count">
+                {directorySelectedFiles.length}
+              </span>{" "}
+              file(s) selected for {targetDirectory}:
             </h4>
-            <div className="file-list">
-              {directorySelectedFiles.slice(0, 10).map((file, index) => (
-                <div key={index} className="file-item">
-                  <span className="file-icon">📄</span>
-                  <span className="file-name">{targetDirectory}/{file.name}</span>
-                </div>
-              ))}
-              {directorySelectedFiles.length > 10 && (
-                <div className="file-item more-files">
-                  <span className="file-icon">⋯</span>
-                  <span className="file-name">and {directorySelectedFiles.length - 10} more files</span>
-                </div>
-              )}
+            <div className="file-list-with-comments">
+              {directorySelectedFiles.map((file, index) => {
+                const fileKey = `${targetDirectory}/${file.name}`;
+                return (
+                  <div key={index} className="file-item-with-comment">
+                    <div className="file-info">
+                      <span className="file-icon">📄</span>
+                      <span className="file-name">{fileKey}</span>
+                    </div>
+                    <div className="comment-input-container">
+                      <Input.TextArea
+                        placeholder="Add a comment for this file (optional)"
+                        value={fileComments[fileKey] || ""}
+                        onChange={(e) =>
+                          handleCommentChange(fileKey, e.target.value)
+                        }
+                        disabled={directoryUploading}
+                        rows={2}
+                        maxLength={250}
+                        showCount
+                        className="comment-input"
+                      />
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
       </Modal>
 
-      {/* NEW: Version Download Confirmation Modal */}
+      {/* Version Download Confirmation Modal */}
       <Modal
         open={versionDownloadModalVisible}
         title={
@@ -1198,8 +1531,8 @@ const fetchFiles = async () => {
                   <div className="detail-item">
                     <span className="detail-label">Version ID:</span>
                     <span className="detail-value">
-                      {selectedVersion.version.VersionId === "null" 
-                        ? "Original Version" 
+                      {selectedVersion.version.VersionId === "null"
+                        ? "Original Version"
                         : selectedVersion.version.VersionId}
                       {selectedVersion.version.IsLatest && (
                         <span className="latest-badge">LATEST</span>
@@ -1209,21 +1542,27 @@ const fetchFiles = async () => {
                 </div>
               </div>
               <div className="confirmation-message">
-                <p>Are you sure you want to download this version of the file?</p>
+                <p>
+                  Are you sure you want to download this version of the file?
+                </p>
               </div>
             </div>
           </div>
         )}
       </Modal>
 
-      {/* Original Loading State */}
+      {/* Loading State */}
       {loading ? (
         <div className="custom-loader">
           <div className="spinner"></div>
           <div className="loader-text">Please Wait...</div>
         </div>
-      ) : files.length === 0 ? (
-        <div className="no-files-message">No files found</div>
+      ) : (isSearchMode ? searchResults.length === 0 : files.length === 0) ? (
+        <div className="no-files-message">
+          {isSearchMode
+            ? `No files found matching "${searchQuery}"`
+            : "No files found"}
+        </div>
       ) : (
         <>
           {/* Enhanced File Table with All Version Details */}
@@ -1236,6 +1575,23 @@ const fetchFiles = async () => {
                 <th>Locked Date</th>
                 <th>Current Version</th>
                 <th>Last Modified</th>
+                <th>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                    }}
+                  >
+                    Comments
+                    <Switch
+                      size="small"
+                      checked={showComments}
+                      onChange={setShowComments}
+                      title="Show/Hide Comments"
+                    />
+                  </div>
+                </th>
                 <th>Download</th>
                 <th>Action</th>
               </tr>
@@ -1248,7 +1604,15 @@ const fetchFiles = async () => {
 
                 return (
                   <React.Fragment key={fileName}>
-                    <tr className={file.isChild ? "child-file" : ""}>
+                    <tr
+                      className={
+                        file.isChild
+                          ? "child-file"
+                          : file.isSearchResult
+                          ? "search-result"
+                          : ""
+                      }
+                    >
                       <td
                         style={{
                           paddingLeft: file.isChild
@@ -1257,7 +1621,9 @@ const fetchFiles = async () => {
                         }}
                       >
                         {file.isFolder ? (
-                          <span style={{ display: "flex", alignItems: "center" }}>
+                          <span
+                            style={{ display: "flex", alignItems: "center" }}
+                          >
                             <span style={{ marginRight: "8px" }}>📁</span>
                             <span>{file.fileName}</span>
                             <span
@@ -1271,7 +1637,9 @@ const fetchFiles = async () => {
                             </span>
                             <span
                               onClick={() =>
-                                handleFolderToggle(file.fullPath || file.fileName)
+                                handleFolderToggle(
+                                  file.fullPath || file.fileName
+                                )
                               }
                               style={{
                                 marginLeft: "10px",
@@ -1290,29 +1658,47 @@ const fetchFiles = async () => {
                                 (e.target.style.backgroundColor = "transparent")
                               }
                             >
-                              {expandedFolders.has(file.fullPath || file.fileName)
+                              {expandedFolders.has(
+                                file.fullPath || file.fileName
+                              )
                                 ? "▲"
                                 : "▼"}
                             </span>
                           </span>
                         ) : (
-                          <span style={{ display: "flex", alignItems: "center" }}>
+                          <span
+                            style={{ display: "flex", alignItems: "center" }}
+                          >
                             {!file.isChild && (
                               <span style={{ marginRight: "8px" }}>📄</span>
                             )}
                             {file.isChild && (
                               <span style={{ marginRight: "8px" }}>📄</span>
                             )}
-                            {file.fileName}
+                            <span
+                              style={{
+                                backgroundColor: file.isSearchResult
+                                  ? "#fff3cd"
+                                  : "transparent",
+                                padding: file.isSearchResult ? "2px 4px" : "0",
+                                borderRadius: file.isSearchResult ? "3px" : "0",
+                              }}
+                            >
+                              {file.fileName}
+                            </span>
                           </span>
                         )}
                       </td>
-                      <td>{file.isFolder ? "-" : file.locked ? "Yes" : "No"}</td>
+                      <td>
+                        {file.isFolder ? "-" : file.locked ? "Yes" : "No"}
+                      </td>
                       <td>
                         {file.isFolder ? (
                           "-"
                         ) : file.locked ? (
-                          <Tooltip title={file.lockedBy}>{file.lockedBy}</Tooltip>
+                          <Tooltip title={file.lockedBy}>
+                            {file.lockedBy}
+                          </Tooltip>
                         ) : (
                           "-"
                         )}
@@ -1328,7 +1714,13 @@ const fetchFiles = async () => {
                         {file.isFolder ? (
                           "-"
                         ) : (
-                          <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "4px",
+                            }}
+                          >
                             <span
                               onClick={() => handleVersionToggle(fileName)}
                               style={{
@@ -1342,13 +1734,19 @@ const fetchFiles = async () => {
                                 gap: "4px",
                               }}
                             >
-                              Click here to see version
+                              {isSearchMode && showVersionsInSearch
+                                ? isVersionExpanded
+                                  ? "Hide versions"
+                                  : "Show versions"
+                                : "Click here to see version"}
                               <span
                                 style={{
                                   fontSize: "10px",
                                   fontWeight: "bold",
                                   transition: "transform 0.2s ease",
-                                  transform: isVersionExpanded ? "rotate(180deg)" : "rotate(0deg)",
+                                  transform: isVersionExpanded
+                                    ? "rotate(180deg)"
+                                    : "rotate(0deg)",
                                 }}
                               >
                                 ▼
@@ -1362,11 +1760,32 @@ const fetchFiles = async () => {
                         {file.isFolder
                           ? "-"
                           : (() => {
-                              const latest = file.versions?.find((v) => v.IsLatest);
+                              const latest = file.versions?.find(
+                                (v) => v.IsLatest
+                              );
                               return latest?.LastModified
                                 ? formatDateTime(latest.LastModified)
-                                : "-";
+                                : formatDateTime(file.lastModified) || "-";
                             })()}
+                      </td>
+
+                      <td>
+                        {file.isFolder ? (
+                          "-"
+                        ) : showComments ? (
+                          <CommentCell
+                            fileName={file.fullPath || file.fileName}
+                          />
+                        ) : (
+                          <Button
+                            size="small"
+                            type="link"
+                            onClick={() => setShowComments(true)}
+                            style={{ padding: 0, fontSize: "12px" }}
+                          >
+                            Show Comments
+                          </Button>
+                        )}
                       </td>
 
                       <td>
@@ -1385,7 +1804,9 @@ const fetchFiles = async () => {
                                 className="download-btn"
                                 onClick={() => handleDownload(file)}
                                 disabled={
-                                  uploading || directoryUploading || isDownloading
+                                  uploading ||
+                                  directoryUploading ||
+                                  isDownloading
                                 }
                                 style={{
                                   backgroundColor: "#1890ff",
@@ -1495,8 +1916,8 @@ const fetchFiles = async () => {
                         )}
                       </td>
                     </tr>
-                    
-                    {/* Version Details Row - Now shows ALL versions with download buttons */}
+
+                    {/* Version Details Row - Shows ALL versions with download buttons */}
                     {!file.isFolder && isVersionExpanded && (
                       <tr className="version-details-row">
                         <td colSpan="8">
@@ -1523,12 +1944,15 @@ const fetchFiles = async () => {
                               {file.versions && file.versions.length > 0 ? (
                                 file.versions.map((version, vIndex) => {
                                   const versionDownloadKey = `${fileName}-${version.VersionId}`;
-                                  const isVersionDownloading = downloadingFiles.has(versionDownloadKey);
-                                  
+                                  const isVersionDownloading =
+                                    downloadingFiles.has(versionDownloadKey);
+
                                   return (
-                                    <div 
-                                      key={version.VersionId || vIndex} 
-                                      className={`version-item ${version.IsLatest ? 'latest-version' : ''}`}
+                                    <div
+                                      key={version.VersionId || vIndex}
+                                      className={`version-item ${
+                                        version.IsLatest ? "latest-version" : ""
+                                      }`}
                                     >
                                       <div className="version-info">
                                         <div className="version-details-grid">
@@ -1538,40 +1962,67 @@ const fetchFiles = async () => {
                                               ? "Original"
                                               : version.VersionId}
                                             {version.IsLatest && (
-                                              <span className="latest-badge">LATEST</span>
+                                              <span className="latest-badge">
+                                                LATEST
+                                              </span>
                                             )}
                                           </div>
                                           <div className="version-actions">
-                                            <Tooltip title={`Download version ${version.VersionId === "null" ? "Original" : version.VersionId.substring(0, 8)}...`}>
+                                            <Tooltip
+                                              title={`Download version ${
+                                                version.VersionId === "null"
+                                                  ? "Original"
+                                                  : version.VersionId.substring(
+                                                      0,
+                                                      8
+                                                    )
+                                              }...`}
+                                            >
                                               <button
                                                 className="version-download-btn"
-                                                onClick={() => handleVersionDownload(fileName, version)}
-                                                disabled={isVersionDownloading || downloadingVersion}
+                                                onClick={() =>
+                                                  handleVersionDownload(
+                                                    fileName,
+                                                    version
+                                                  )
+                                                }
+                                                disabled={
+                                                  isVersionDownloading ||
+                                                  downloadingVersion
+                                                }
                                                 style={{
                                                   backgroundColor: "#52c41a",
                                                   color: "white",
                                                   border: "none",
                                                   borderRadius: "6px",
                                                   padding: "6px 12px",
-                                                  cursor: isVersionDownloading ? "not-allowed" : "pointer",
+                                                  cursor: isVersionDownloading
+                                                    ? "not-allowed"
+                                                    : "pointer",
                                                   fontSize: "12px",
                                                   display: "flex",
                                                   alignItems: "center",
                                                   gap: "6px",
-                                                  opacity: isVersionDownloading ? 0.6 : 1,
+                                                  opacity: isVersionDownloading
+                                                    ? 0.6
+                                                    : 1,
                                                   transition: "all 0.2s ease",
                                                   fontWeight: "500",
                                                 }}
                                                 onMouseOver={(e) => {
                                                   if (!isVersionDownloading) {
-                                                    e.target.style.backgroundColor = "#73d13d";
-                                                    e.target.style.transform = "translateY(-1px)";
+                                                    e.target.style.backgroundColor =
+                                                      "#73d13d";
+                                                    e.target.style.transform =
+                                                      "translateY(-1px)";
                                                   }
                                                 }}
                                                 onMouseOut={(e) => {
                                                   if (!isVersionDownloading) {
-                                                    e.target.style.backgroundColor = "#52c41a";
-                                                    e.target.style.transform = "translateY(0)";
+                                                    e.target.style.backgroundColor =
+                                                      "#52c41a";
+                                                    e.target.style.transform =
+                                                      "translateY(0)";
                                                   }
                                                 }}
                                               >
@@ -1582,18 +2033,19 @@ const fetchFiles = async () => {
                                                       style={{
                                                         width: "12px",
                                                         height: "12px",
-                                                        border: "2px solid #fff",
-                                                        borderTop: "2px solid transparent",
+                                                        border:
+                                                          "2px solid #fff",
+                                                        borderTop:
+                                                          "2px solid transparent",
                                                         borderRadius: "50%",
-                                                        animation: "spin 1s linear infinite",
+                                                        animation:
+                                                          "spin 1s linear infinite",
                                                       }}
                                                     ></span>
                                                     Downloading...
                                                   </>
                                                 ) : (
-                                                  <>
-                                                    📥 Download
-                                                  </>
+                                                  <>📥 Download</>
                                                 )}
                                               </button>
                                             </Tooltip>
@@ -1624,7 +2076,7 @@ const fetchFiles = async () => {
             <Pagination
               current={currentPage}
               pageSize={pageSize}
-              total={flattenedFiles.length}
+              total={displayFiles.length}
               onChange={(page, newSize) => {
                 setCurrentPage(page);
                 setPageSize(newSize);
@@ -1633,7 +2085,9 @@ const fetchFiles = async () => {
               pageSizeOptions={["10", "20", "50", "100"]}
               showQuickJumper
               showTotal={(total, range) =>
-                `${range[0]}-${range[1]} of ${total} items`
+                `${range[0]}-${range[1]} of ${total} ${
+                  isSearchMode ? "search results" : "items"
+                }`
               }
               className="custom-pagination"
             />

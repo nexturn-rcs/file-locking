@@ -26,6 +26,7 @@
 
 .title-section {
   flex: 1;
+  text-align: center;
 }
 
 .main-title {
@@ -67,6 +68,169 @@
 .company-logo:hover {
   transform: scale(1.02);
   box-shadow: 0 12px 20px -4px rgba(0, 0, 0, 0.2);
+}
+
+/* Controls Section Styles */
+.controls-section {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(20px);
+  border-radius: 20px;
+  padding: 24px 32px;
+  margin-bottom: 24px;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 40px;
+  flex-wrap: wrap;
+}
+
+/* Search Section Styles */
+.search-section {
+  flex: 1;
+  max-width: 600px;
+  min-width: 300px;
+}
+
+.search-form {
+  margin-bottom: 16px;
+}
+
+.search-input-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.search-input {
+  flex: 1;
+  min-width: 300px;
+  max-width: 400px;
+  border-radius: 10px;
+  border: 2px solid #E5E7EB;
+  transition: all 0.3s ease;
+}
+
+.search-input:focus,
+.search-input:hover {
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.search-input .ant-input {
+  border: none;
+  box-shadow: none;
+  padding: 8px 12px;
+  font-size: 14px;
+}
+
+.search-button {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+  border-radius: 10px;
+  padding: 0 20px;
+  height: 40px;
+  font-weight: 600;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 8px rgba(102, 126, 234, 0.2);
+}
+
+.search-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 12px rgba(102, 126, 234, 0.3);
+}
+
+.clear-search-button {
+  border-radius: 10px;
+  border: 2px solid #E5E7EB;
+  color: #6B7280;
+  font-weight: 500;
+  height: 40px;
+  transition: all 0.3s ease;
+}
+
+.clear-search-button:hover {
+  border-color: #EF4444;
+  color: #EF4444;
+  background: #FEF2F2;
+}
+
+/* Search Options Styles */
+.search-options {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, #F8FAFC 0%, #F1F5F9 100%);
+  border-radius: 12px;
+  border: 1px solid #E2E8F0;
+}
+
+.version-toggle-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: white;
+  border-radius: 8px;
+  border: 1px solid #E5E7EB;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.toggle-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #374151;
+  white-space: nowrap;
+}
+
+.search-info {
+  font-size: 14px;
+  color: #6B7280;
+  font-weight: 500;
+  padding: 8px 16px;
+  background: rgba(102, 126, 234, 0.1);
+  border-radius: 8px;
+  border: 1px solid rgba(102, 126, 234, 0.2);
+}
+
+/* Search Results Header */
+.search-results-header {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(20px);
+  border-radius: 16px;
+  padding: 20px 24px;
+  margin-bottom: 16px;
+  box-shadow: 0 8px 12px rgba(0, 0, 0, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.search-results-header h3 {
+  margin: 0 0 8px 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #1F2937;
+}
+
+.search-results-header p {
+  margin: 0;
+  font-size: 0.875rem;
+  color: #6B7280;
+  font-weight: 500;
+}
+
+/* Search Result Row Highlighting */
+.search-result {
+  background-color: rgba(255, 243, 205, 0.3) !important;
+  border-left: 4px solid #F59E0B !important;
+}
+
+.search-result:hover {
+  background-color: rgba(255, 243, 205, 0.5) !important;
 }
 
 /* Upload Section Styles */
@@ -676,6 +840,42 @@
   background-color: #e6f7ff;
 }
 
+/* Enhanced Ant Design Component Overrides */
+.ant-input-affix-wrapper {
+  border-radius: 10px !important;
+  border: 2px solid #E5E7EB !important;
+  transition: all 0.3s ease !important;
+}
+
+.ant-input-affix-wrapper:focus,
+.ant-input-affix-wrapper-focused {
+  border-color: #667eea !important;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1) !important;
+}
+
+.ant-input-affix-wrapper:hover {
+  border-color: #667eea !important;
+}
+
+.ant-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease !important;
+}
+
+.ant-switch {
+  background-color: #E5E7EB !important;
+}
+
+.ant-switch-checked {
+  background-color: #667eea !important;
+}
+
+.ant-switch:focus {
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1) !important;
+}
+
 /* Responsive Design */
 @media (max-width: 768px) {
   .file-container {
@@ -699,6 +899,31 @@
   .company-logo {
     max-width: 240px;
     max-height: 100px;
+  }
+
+  .controls-section {
+    padding: 20px 16px;
+  }
+
+  .search-input-container {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .search-input {
+    min-width: unset;
+    max-width: unset;
+    width: 100%;
+  }
+
+  .search-options {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .version-toggle-container {
+    justify-content: center;
   }
 
   .file-table {
@@ -741,6 +966,21 @@
     max-height: 80px;
   }
 
+  .controls-section {
+    padding: 16px 12px;
+  }
+
+  .search-input-container {
+    gap: 8px;
+  }
+
+  .search-button,
+  .clear-search-button {
+    height: 36px;
+    padding: 0 16px;
+    font-size: 14px;
+  }
+
   .file-table {
     font-size: 0.6875rem;
   }
@@ -749,4 +989,238 @@
   .file-table td {
     padding: 6px 4px;
   }
+}
+/* Add these styles to your FileList.css */
+
+/* Upload Modal with Comments */
+.upload-modal-with-comments .ant-modal-body {
+  max-height: 70vh;
+  overflow-y: auto;
+}
+/* Essential button fixes */
+.ant-modal-footer .ant-btn {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  margin-right: 8px;
+}
+
+.ant-modal-footer .ant-btn:last-child {
+  margin-right: 0;
+}
+
+/* File List with Comments */
+.file-list-with-comments {
+  max-height: 300px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.file-item-with-comment {
+  background-color: white;
+  border: 1px solid #e0e6ed;
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.file-item-with-comment:hover {
+  border-color: #1890ff;
+  box-shadow: 0 2px 8px rgba(24, 144, 255, 0.1);
+}
+
+.file-item-with-comment:last-child {
+  margin-bottom: 0;
+}
+
+.file-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+  color: #2c3e50;
+}
+
+.file-icon {
+  font-size: 16px;
+}
+
+.file-name {
+  font-size: 14px;
+  word-break: break-word;
+}
+
+.comment-input-container {
+ width: 100%;
+}
+
+.comment-input {
+  width: 100%;
+  border-radius: 6px;
+   border: 1px solid #d1d5db;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.comment-input:focus {
+  border-color: #4096ff;
+  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.1);
+}
+
+.comment-input.ant-input {
+  resize: vertical;
+  min-height: 60px;
+}
+
+.comment-input::placeholder {
+  color: #bfbfbf;
+  font-style: italic;
+}
+
+/* Selected Files Section Improvements */
+.selected-files.with-comments {
+  margin-top: 16px;
+  padding: 16px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #e0e6ed;
+}
+
+.selected-files-title {
+  color: #333;
+  font-size: 16px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.files-count {
+  background: #1890ff;
+  color: white;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Comments Toggle in Table Header */
+.file-table th {
+  position: relative;
+}
+
+.file-table th:nth-child(7) { /* Comments column */
+  min-width: 120px;
+}
+
+/* Comment Cell Styling */
+.comment-cell {
+  max-width: 150px;
+}
+
+.comment-preview {
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: #f6f6f6;
+  border: 1px solid #e8e8e8;
+  transition: all 0.2s ease;
+}
+
+.comment-preview:hover {
+  background: #e6f7ff;
+  border-color: #91d5ff;
+}
+
+.comment-loading {
+  color: #999;
+  font-size: 12px;
+  font-style: italic;
+}
+
+.comment-empty {
+  color: #ccc;
+  font-size: 12px;
+  font-style: italic;
+}
+
+/* Enhanced Modal Styling */
+.modal-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 18px;
+  font-weight: 600;
+  color: #333;
+}
+
+.modal-icon {
+  font-size: 20px;
+}
+
+.directory-name {
+  color: #1890ff;
+  background: #f0f8ff;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 14px;
+}
+
+/* Responsive Design for Comments */
+@media (max-width: 768px) {
+  .file-list-with-comments {
+    max-height: 300px;
+  }
+  
+  .file-item-with-comment {
+    padding: 8px;
+  }
+  
+  .comment-input {
+    font-size: 14px;
+  }
+  
+  .file-table th:nth-child(7) {
+    min-width: 100px;
+  }
+}
+
+/* Animation for comment loading */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.file-item-with-comment {
+  animation: fadeIn 0.3s ease;
+}
+
+/* Scrollbar styling for comment areas */
+.file-list-with-comments::-webkit-scrollbar {
+  width: 6px;
+}
+
+.file-list-with-comments::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+
+.file-list-with-comments::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 3px;
+}
+
+.file-list-with-comments::-webkit-scrollbar-thumb:hover {
+  background: #a1a1a1;
 }
