@@ -204,13 +204,162 @@ const FileList = () => {
     }
   };
 
-  const decodeBase64Content = (base64String) => {
+  // ✅ Upload via pre-signed URL for large files
+  const uploadViaPresignedUrl = async (file, comment = null) => {
+    console.log(`🚀 Large file upload: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
+    
     try {
-      return atob(base64String);
+      // Step 1: Request pre-signed URL from Lambda
+      const getUrlPayload = {
+        filename: file.webkitRelativePath || file.name,
+        action: "put",
+        content_type: file.type || "application/octet-stream"
+      };
+
+      if (comment && comment.trim()) {
+        getUrlPayload.comment = comment.trim();
+      }
+
+      const getUrlResponse = await fetch(`${API_BASE_URL}/get-url`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(getUrlPayload),
+      });
+
+      if (!getUrlResponse.ok) {
+        throw new Error(`Failed to get pre-signed URL: ${getUrlResponse.status}`);
+      }
+
+      const { url, headers } = await getUrlResponse.json();
+
+      // Step 2: Upload directly to S3 using pre-signed URL
+      const uploadResponse = await fetch(url, {
+        method: "PUT",
+        headers: headers || {},
+        body: file
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error(`S3 upload failed: ${uploadResponse.status}`);
+      }
+
+      console.log(`✅ Large file uploaded successfully: ${file.name}`);
+      return { success: true, filename: file.name };
+
     } catch (error) {
-      console.error("Error decoding base64:", error);
-      return base64String;
+      console.error(`❌ Large file upload failed for ${file.name}:`, error);
+      throw error;
     }
+  };
+
+  // ✅ Upload via API Gateway for small files (≤ 10 MB)
+  const uploadViaApiGateway = async (file, comment = null) => {
+    console.log(`📦 Small file upload: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
+    
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const base64Content = reader.result.split(",")[1];
+          const fileKey = file.webkitRelativePath || file.name;
+          const filePayload = {
+            key: fileKey,
+            content_base64: base64Content,
+            content_type: file.type || "application/octet-stream",
+          };
+
+          if (comment && comment.trim()) {
+            filePayload.comment = comment.trim();
+          }
+
+          resolve(filePayload);
+        } catch (error) {
+          reject(error);
+        }
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
+  // ✅ Upload via pre-signed URL for large files (directory version)
+  const uploadViaPresignedUrlDirectory = async (file, targetDir, comment = null) => {
+    console.log(`🚀 Large directory file upload: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
+    
+    try {
+      const fileKey = `${targetDir}/${file.name}`;
+      
+      // Step 1: Request pre-signed URL from Lambda
+      const getUrlPayload = {
+        filename: fileKey,
+        action: "put",
+        content_type: file.type || "application/octet-stream"
+      };
+
+      if (comment && comment.trim()) {
+        getUrlPayload.comment = comment.trim();
+      }
+
+      const getUrlResponse = await fetch(`${API_BASE_URL}/get-url`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(getUrlPayload),
+      });
+
+      if (!getUrlResponse.ok) {
+        throw new Error(`Failed to get pre-signed URL: ${getUrlResponse.status}`);
+      }
+
+      const { url, headers } = await getUrlResponse.json();
+
+      // Step 2: Upload directly to S3 using pre-signed URL
+      const uploadResponse = await fetch(url, {
+        method: "PUT",
+        headers: headers || {},
+        body: file
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error(`S3 upload failed: ${uploadResponse.status}`);
+      }
+
+      console.log(`✅ Large directory file uploaded successfully: ${fileKey}`);
+      return { success: true, filename: fileKey };
+
+    } catch (error) {
+      console.error(`❌ Large directory file upload failed for ${file.name}:`, error);
+      throw error;
+    }
+  };
+
+  // ✅ Upload via API Gateway for small files (directory version)
+  const uploadViaApiGatewayDirectory = async (file, targetDir, comment = null) => {
+    console.log(`📦 Small directory file upload: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
+    
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const base64Content = reader.result.split(",")[1];
+          const fileKey = `${targetDir}/${file.name}`;
+          const filePayload = {
+            key: fileKey,
+            content_base64: base64Content,
+            content_type: file.type || "application/octet-stream",
+          };
+
+          if (comment && comment.trim()) {
+            filePayload.comment = comment.trim();
+          }
+
+          resolve(filePayload);
+        } catch (error) {
+          reject(error);
+        }
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
   };
 
   const createBlobFromResponse = async (response) => {
@@ -649,7 +798,7 @@ const FileList = () => {
     const userInfo = getUserFromToken();
     if (userInfo) setUser(userInfo);
     fetchFiles();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleFolderToggle = (folderPath) => {
     const newExpandedFolders = new Set(expandedFolders);
@@ -826,71 +975,124 @@ const FileList = () => {
     );
 
     try {
-      console.log("Starting directory upload process...");
+      console.log("Starting hybrid directory upload process...");
 
-      const filesPayload = await Promise.all(
-        directorySelectedFiles.map(
-          (file) =>
-            new Promise((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onload = () => {
-                const base64Content = reader.result.split(",")[1];
-                const fileKey = `${targetDirectory}/${file.name}`;
-                const filePayload = {
-                  key: fileKey,
-                  content_base64: base64Content,
-                  content_type: file.type || "application/octet-stream",
-                };
+      // ✅ Separate files by size
+      const smallFiles = [];
+      const largeFiles = [];
 
-                // Add comment if provided
-                const comment = fileComments[fileKey];
-                if (comment && comment.trim()) {
-                  filePayload.comment = comment.trim();
-                }
-
-                resolve(filePayload);
-              };
-              reader.onerror = reject;
-              reader.readAsDataURL(file);
-            })
-        )
-      );
-
-      console.log("Files prepared for directory upload, sending to server...");
-
-      const response = await fetch(`${API_BASE_URL}/upload`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ files: filesPayload }),
+      directorySelectedFiles.forEach(file => {
+        const fileSizeMB = file.size / (1024 * 1024);
+        console.log(`📁 ${targetDirectory}/${file.name}: ${fileSizeMB.toFixed(2)} MB`);
+        
+        if (file.size <= 10 * 1024 * 1024) { // ≤ 10 MB
+          smallFiles.push(file);
+        } else {
+          largeFiles.push(file);
+        }
       });
 
-      const result = await response.json();
-      console.log("Directory upload response:", response.status, result);
+      console.log(`📦 Small directory files (≤10MB): ${smallFiles.length}`);
+      console.log(`🚀 Large directory files (>10MB): ${largeFiles.length}`);
+
+      const uploadResults = [];
+      let successCount = 0;
+      let errorCount = 0;
+
+      // ✅ Upload small files via API Gateway (if any)
+      if (smallFiles.length > 0) {
+        try {
+          console.log("📦 Processing small directory files via API Gateway...");
+          
+          const smallFilesPayload = await Promise.all(
+            smallFiles.map(async (file) => {
+              const fileKey = `${targetDirectory}/${file.name}`;
+              const comment = fileComments[fileKey];
+              return await uploadViaApiGatewayDirectory(file, targetDirectory, comment);
+            })
+          );
+
+          const response = await fetch(`${API_BASE_URL}/upload`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ files: smallFilesPayload }),
+          });
+
+          const result = await response.json();
+
+          if (response.ok && result.uploaded) {
+            successCount += result.uploaded.length;
+            uploadResults.push(`✅ ${result.uploaded.length} small file(s) via API Gateway`);
+          } else {
+            errorCount += smallFiles.length;
+            uploadResults.push(`❌ ${smallFiles.length} small file(s) failed`);
+          }
+        } catch (error) {
+          console.error("Small directory files upload error:", error);
+          errorCount += smallFiles.length;
+          uploadResults.push(`❌ ${smallFiles.length} small file(s) failed`);
+        }
+      }
+
+      // ✅ Upload large files via pre-signed URLs (if any)
+      if (largeFiles.length > 0) {
+        console.log("🚀 Processing large directory files via S3 pre-signed URLs...");
+        
+        const largeFilePromises = largeFiles.map(async (file) => {
+          try {
+            const fileKey = `${targetDirectory}/${file.name}`;
+            const comment = fileComments[fileKey];
+            await uploadViaPresignedUrlDirectory(file, targetDirectory, comment);
+            return { success: true, filename: `${targetDirectory}/${file.name}` };
+          } catch (error) {
+            console.error(`Failed to upload large directory file ${file.name}:`, error);
+            return { success: false, filename: `${targetDirectory}/${file.name}`, error };
+          }
+        });
+
+        const largeFileResults = await Promise.all(largeFilePromises);
+        
+        const successfulLargeFiles = largeFileResults.filter(r => r.success);
+        const failedLargeFiles = largeFileResults.filter(r => !r.success);
+
+        successCount += successfulLargeFiles.length;
+        errorCount += failedLargeFiles.length;
+
+        if (successfulLargeFiles.length > 0) {
+          uploadResults.push(`✅ ${successfulLargeFiles.length} large file(s) via S3 direct upload`);
+        }
+        if (failedLargeFiles.length > 0) {
+          uploadResults.push(`❌ ${failedLargeFiles.length} large file(s) failed`);
+        }
+      }
 
       toast.dismiss(loadingToast);
 
-      if (response.ok && result.uploaded && result.uploaded.length > 0) {
+      // ✅ Show results
+      if (successCount > 0) {
         console.log("Directory upload successful, showing success message...");
+        
+        const successMessage = successCount === directorySelectedFiles.length 
+          ? `🎉 Successfully uploaded all ${successCount} file(s) to ${targetDirectory}!`
+          : `🎉 Successfully uploaded ${successCount} out of ${directorySelectedFiles.length} file(s) to ${targetDirectory}!`;
 
-        toast.success(
-          `🎉 Successfully uploaded ${result.uploaded.length} file(s) to ${targetDirectory}!`,
-          {
-            duration: 4000,
-            position: "top-center",
-            style: {
-              background: "#10B981",
-              color: "white",
-              fontWeight: "600",
-              padding: "16px",
-              borderRadius: "12px",
-              fontSize: "14px",
-            },
-            iconTheme: {
-              primary: "white",
-              secondary: "#10B981",
-            },
-          }
-        );
+        toast.success(successMessage, {
+          duration: 6000,
+          position: "top-center",
+          style: {
+            background: "#10B981",
+            color: "white",
+            fontWeight: "600",
+            padding: "16px",
+            borderRadius: "12px",
+            fontSize: "14px",
+            maxWidth: "500px",
+          },
+          iconTheme: {
+            primary: "white",
+            secondary: "#10B981",
+          },
+        });
 
         setDirectoryUploadModalVisible(false);
         resetDirectoryUploadState();
@@ -908,16 +1110,21 @@ const FileList = () => {
           );
         }
       } else {
-        console.warn("Directory upload failed:", result);
-        toast.error(result.message || "Upload failed or no files uploaded");
+        console.warn("All directory uploads failed");
+        toast.error("All directory file uploads failed. Please try again.");
       }
+
+      if (errorCount > 0 && successCount === 0) {
+        toast.error(`Failed to upload ${errorCount} file(s) to ${targetDirectory}. Please check file sizes and try again.`);
+      }
+
     } catch (err) {
       console.error("Directory upload error:", err);
       toast.dismiss(loadingToast);
       toast.error("Upload failed. Please try again.");
     } finally {
       setDirectoryUploading(false);
-      console.log("Directory upload process completed");
+      console.log("Hybrid directory upload process completed");
     }
   };
 
@@ -931,71 +1138,140 @@ const FileList = () => {
     const loadingToast = toast.loading("Uploading files...");
 
     try {
-      console.log("Starting upload process...");
+      console.log("Starting hybrid upload process...");
 
-      const filesPayload = await Promise.all(
-        selectedFiles.map(
-          (file) =>
-            new Promise((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onload = () => {
-                const base64Content = reader.result.split(",")[1];
-                const fileKey = file.webkitRelativePath || file.name;
-                const filePayload = {
-                  key: fileKey,
-                  content_base64: base64Content,
-                  content_type: file.type || "application/octet-stream",
-                };
+      // ✅ Separate files by size
+      const smallFiles = [];
+      const largeFiles = [];
 
-                // Add comment if provided
-                const comment = fileComments[fileKey];
-                if (comment && comment.trim()) {
-                  filePayload.comment = comment.trim();
-                }
-
-                resolve(filePayload);
-              };
-              reader.onerror = reject;
-              reader.readAsDataURL(file);
-            })
-        )
-      );
-
-      console.log("Files prepared, sending to server...");
-
-      const response = await fetch(`${API_BASE_URL}/upload`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ files: filesPayload }),
+      selectedFiles.forEach(file => {
+        const fileSizeMB = file.size / (1024 * 1024);
+        console.log(`📁 ${file.name}: ${fileSizeMB.toFixed(2)} MB`);
+        
+        if (file.size <= 10 * 1024 * 1024) { // ≤ 10 MB
+          smallFiles.push(file);
+        } else {
+          largeFiles.push(file);
+        }
       });
 
-      const result = await response.json();
-      console.log("Upload response:", response.status, result);
+      console.log(`📦 Small files (≤10MB): ${smallFiles.length}`);
+      console.log(`🚀 Large files (>10MB): ${largeFiles.length}`);
+
+      const uploadResults = [];
+      let successCount = 0;
+      let errorCount = 0;
+
+      // ✅ Upload small files via API Gateway (if any)
+      if (smallFiles.length > 0) {
+        try {
+          console.log("📦 Processing small files via API Gateway...");
+          
+          const smallFilesPayload = await Promise.all(
+            smallFiles.map(async (file) => {
+              const fileKey = file.webkitRelativePath || file.name;
+              const comment = fileComments[fileKey];
+              return await uploadViaApiGateway(file, comment);
+            })
+          );
+
+          console.log("📦 Payload prepared for API Gateway:", smallFilesPayload);
+
+          const response = await fetch(`${API_BASE_URL}/upload`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ files: smallFilesPayload }),
+          });
+
+          console.log("📦 API Gateway Response Status:", response.status);
+          console.log("📦 API Gateway Response OK:", response.ok);
+
+          const result = await response.json();
+          console.log("📦 API Gateway Response Data:", result);
+
+          // Handle both "uploaded" and "uploads" response formats
+          const uploadedFiles = result.uploaded || result.uploads;
+
+          if (response.ok && uploadedFiles && uploadedFiles.length > 0) {
+            console.log("✅ Small files upload successful:", uploadedFiles);
+            successCount += uploadedFiles.length;
+            uploadResults.push(`✅ ${uploadedFiles.length} small file(s) via API Gateway`);
+          } else {
+            console.error("❌ Small files upload failed. Status:", response.status, "Result:", result);
+            errorCount += smallFiles.length;
+            uploadResults.push(`❌ ${smallFiles.length} small file(s) failed: ${result.error || result.message || 'Unknown error'}`);
+          }
+        } catch (error) {
+          console.error("Small files upload error:", error);
+          console.error("Error details:", {
+            message: error.message,
+            stack: error.stack,
+            API_BASE_URL
+          });
+          errorCount += smallFiles.length;
+          uploadResults.push(`❌ ${smallFiles.length} small file(s) failed: ${error.message}`);
+        }
+      }
+
+      // ✅ Upload large files via pre-signed URLs (if any)
+      if (largeFiles.length > 0) {
+        console.log("🚀 Processing large files via S3 pre-signed URLs...");
+        
+        const largeFilePromises = largeFiles.map(async (file) => {
+          try {
+            const fileKey = file.webkitRelativePath || file.name;
+            const comment = fileComments[fileKey];
+            await uploadViaPresignedUrl(file, comment);
+            return { success: true, filename: file.name };
+          } catch (error) {
+            console.error(`Failed to upload large file ${file.name}:`, error);
+            return { success: false, filename: file.name, error };
+          }
+        });
+
+        const largeFileResults = await Promise.all(largeFilePromises);
+        
+        const successfulLargeFiles = largeFileResults.filter(r => r.success);
+        const failedLargeFiles = largeFileResults.filter(r => !r.success);
+
+        successCount += successfulLargeFiles.length;
+        errorCount += failedLargeFiles.length;
+
+        if (successfulLargeFiles.length > 0) {
+          uploadResults.push(`✅ ${successfulLargeFiles.length} large file(s) via S3 direct upload`);
+        }
+        if (failedLargeFiles.length > 0) {
+          uploadResults.push(`❌ ${failedLargeFiles.length} large file(s) failed`);
+        }
+      }
 
       toast.dismiss(loadingToast);
 
-      if (response.ok && result.uploaded && result.uploaded.length > 0) {
+      // ✅ Show results
+      if (successCount > 0) {
         console.log("Upload successful, showing success message...");
+        
+        const successMessage = successCount === selectedFiles.length 
+          ? `🎉 Successfully uploaded all ${successCount} file(s)!`
+          : `🎉 Successfully uploaded ${successCount} out of ${selectedFiles.length} file(s)!`;
 
-        toast.success(
-          `🎉 Successfully uploaded ${result.uploaded.length} file(s)!`,
-          {
-            duration: 4000,
-            position: "top-center",
-            style: {
-              background: "#10B981",
-              color: "white",
-              fontWeight: "600",
-              padding: "16px",
-              borderRadius: "12px",
-              fontSize: "14px",
-            },
-            iconTheme: {
-              primary: "white",
-              secondary: "#10B981",
-            },
-          }
-        );
+        toast.success(successMessage, {
+          duration: 6000,
+          position: "top-center",
+          style: {
+            background: "#10B981",
+            color: "white",
+            fontWeight: "600",
+            padding: "16px",
+            borderRadius: "12px",
+            fontSize: "14px",
+            maxWidth: "500px",
+          },
+          iconTheme: {
+            primary: "white",
+            secondary: "#10B981",
+          },
+        });
 
         setUploadModalVisible(false);
         resetUploadState();
@@ -1011,16 +1287,21 @@ const FileList = () => {
           );
         }
       } else {
-        console.warn("Upload failed:", result);
-        toast.error(result.message || "Upload failed or no files uploaded");
+        console.warn("All uploads failed");
+        toast.error("All file uploads failed. Please try again.");
       }
+
+      if (errorCount > 0 && successCount === 0) {
+        toast.error(`Failed to upload ${errorCount} file(s). Please check file sizes and try again.`);
+      }
+
     } catch (err) {
       console.error("Upload error:", err);
       toast.dismiss(loadingToast);
       toast.error("Upload failed. Please try again.");
     } finally {
       setUploading(false);
-      console.log("Upload process completed");
+      console.log("Hybrid upload process completed");
     }
   };
 
@@ -1341,6 +1622,7 @@ const FileList = () => {
             <div className="file-list-with-comments">
               {selectedFiles.map((file, index) => {
                 const fileKey = file.webkitRelativePath || file.name;
+                
                 return (
                   <div key={index} className="file-item-with-comment">
                     <div className="file-info">
@@ -1450,6 +1732,7 @@ const FileList = () => {
             <div className="file-list-with-comments">
               {directorySelectedFiles.map((file, index) => {
                 const fileKey = `${targetDirectory}/${file.name}`;
+                
                 return (
                   <div key={index} className="file-item-with-comment">
                     <div className="file-info">

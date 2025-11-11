@@ -1050,9 +1050,49 @@
   font-size: 16px;
 }
 
+.file-details {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .file-name {
   font-size: 14px;
   word-break: break-word;
+}
+
+.file-size-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+}
+
+.file-size {
+  color: #666;
+  font-weight: 500;
+}
+
+.upload-method {
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.upload-method.small-file {
+  background-color: #e6f7ff;
+  color: #1890ff;
+  border: 1px solid #91d5ff;
+}
+
+.upload-method.large-file {
+  background-color: #fff7e6;
+  color: #fa8c16;
+  border: 1px solid #ffd591;
 }
 
 .comment-input-container {
@@ -1223,4 +1263,39 @@
 
 .file-list-with-comments::-webkit-scrollbar-thumb:hover {
   background: #a1a1a1;
+}
+
+/* Upload Info Banner */
+.upload-info-banner {
+  background: linear-gradient(135deg, #e6f3ff 0%, #f0f8ff 100%);
+  border: 1px solid #b3d9ff;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 24px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 2px 8px rgba(0, 123, 255, 0.1);
+}
+
+.upload-info-banner .info-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.upload-info-banner .info-content {
+  flex: 1;
+}
+
+.upload-info-banner .info-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #0066cc;
+  margin-bottom: 4px;
+}
+
+.upload-info-banner .info-description {
+  font-size: 12px;
+  color: #0052a3;
+  line-height: 1.4;
 }
